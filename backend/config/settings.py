@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "courses",
     "materials",
     "exams",
+    "knowledge",
     "transcription",
 ]
 MIDDLEWARE = [

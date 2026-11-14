@@ -59,6 +59,12 @@ Other accepted formats: transcripts `.txt`, `.md`, `.srt`, `.vtt`; slides `.pdf`
 
 Upload a past exam with numbered questions (`1. …`, `2) …`, `Soru 3: …`) or lettered sections with points (`A. … (10 points)`), then open **Exam questions and sources** from the course page. Questions retain their literal text and originating PDF page (if applicable); lettered sections stop at a `Solution.` heading so answer steps are not extracted as questions. The local keyword/IDF matcher searches only ready transcript, slide and study chunks in the same course and requires multiple shared terms; an unmatched question shows **No reliable match found**. Optionally set `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` in the backend environment to rerank up to 12 lexical candidates through OpenRouter. Only real candidate chunk IDs can be cited; provider errors or invalid responses fall back to keyword matching. Each source request can incur an OpenRouter charge and sends the question and candidate excerpts to the provider; model scores and explanations are heuristics, so review the original chunk. Lexical candidate retrieval still misses paraphrases. Unsupported/scan-only exam questions are not invented; supply an extractable numbered or lettered document.
 
+### Knowledge graph
+
+Open **Knowledge graph** from a course and select **Generate topics**. The local generator looks for repeated phrases in ready transcripts, slides and study materials, and links past exam questions that contain the same phrase. The graph shows the original excerpts and available page, slide or time information. Run generation again after adding materials.
+
+If `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` are configured in Django, **Use OpenRouter for this run** lets OpenRouter select from the local candidates. This sends limited excerpts to the provider and may incur a charge. Opening the graph reads saved results. Provider failures preserve the last saved graph.
+
 ## Checks
 
 With backend dependencies installed, run `DB_ENGINE=sqlite .venv/bin/python manage.py test` and `DB_ENGINE=sqlite .venv/bin/python manage.py check`. The SQLite switch is only for local automated tests; normal runs require PostgreSQL environment variables. From `frontend/`, run `npm run typecheck` and `npm run build`.

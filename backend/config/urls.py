@@ -3,6 +3,7 @@ from rest_framework.routers import SimpleRouter
 
 from courses.views import CourseViewSet
 from exams.views import QuestionsView, QuestionSourcesView
+from knowledge.views import GenerateKnowledgeView, KnowledgeView
 from materials.views import CourseMaterialsView
 from transcription.views import JobView, RecordingsView, TranscriptView
 
@@ -10,6 +11,8 @@ router = SimpleRouter()
 router.register("courses", CourseViewSet, basename="course")
 
 urlpatterns = [
+    path("api/courses/<int:course_id>/knowledge/", KnowledgeView.as_view(), name="course-knowledge"),
+    path("api/courses/<int:course_id>/knowledge/generate/", GenerateKnowledgeView.as_view(), name="generate-knowledge"),
     path("api/courses/<int:course_id>/questions/", QuestionsView.as_view(), name="course-questions"),
     path("api/questions/<int:question_id>/sources/", QuestionSourcesView.as_view(), name="question-sources"),
     path("api/courses/<int:course_id>/materials/", CourseMaterialsView.as_view(), name="course-materials"),

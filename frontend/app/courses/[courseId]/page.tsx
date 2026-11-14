@@ -234,6 +234,12 @@ export default function CoursePage({
             <path d="m12 5 7 7-7 7" />
           </svg>
         </a>
+        <a
+          href={`/courses/${course.id}/knowledge`}
+          className="btn secondary action-tile"
+        >
+          <span className="action-tile-inner">Knowledge graph</span>
+        </a>
       </div>
 
       <div className="callout-info">

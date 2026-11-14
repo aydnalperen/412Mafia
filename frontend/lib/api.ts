@@ -163,6 +163,39 @@ export const questionsApi = {
     request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`),
 };
 
+export type KnowledgeGraph = {
+  openrouter_available: boolean;
+  topics: {
+    id: number;
+    name: string;
+    description: string;
+    question_ids: number[];
+    sources: {
+      chunk_id: number;
+      material_id: number;
+      file_name: string;
+      text: string;
+      page_number: number | null;
+      is_slide: boolean;
+      start_seconds: number | null;
+      end_seconds: number | null;
+    }[];
+  }[];
+};
+
+function knowledgeUrl(courseId: string) {
+  return `${API_BASE}/api/courses/${encodeURIComponent(courseId)}/knowledge/`;
+}
+
+export const knowledgeApi = {
+  get: (courseId: string) => request<KnowledgeGraph>(knowledgeUrl(courseId)),
+  generate: (courseId: string, mode: "local" | "openrouter") =>
+    request<KnowledgeGraph>(`${knowledgeUrl(courseId)}generate/`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
+};
+
 export const recordingsApi = {
   list: (courseId: string | number): Promise<TranscriptionJob[]> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/recordings/`),
