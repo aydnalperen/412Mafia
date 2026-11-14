@@ -2360,6 +2360,13 @@ select {
   box-shadow: var(--shadow-xs);
 }
 
+.flashcards-toolbar-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .flashcards-progress-track {
   width: 100%;
   height: 7px;
@@ -2376,10 +2383,54 @@ select {
   transition: width 260ms var(--ease-snappy);
 }
 
+.flashcard-deck-stage {
+  display: flex;
+  justify-content: center;
+}
+
+.flashcard-deck-card {
+  width: 100%;
+  max-width: 880px;
+  padding: 28px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  box-shadow: var(--shadow-md);
+}
+
+.flashcard-deck-body {
+  padding: 24px 26px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, var(--bg-surface-muted) 100%);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.flashcard-side-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.flashcard-deck-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .flashcards-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
+  align-items: stretch;
 }
 
 .flashcard-card {
@@ -2397,10 +2448,10 @@ select {
 
 .flashcard-card-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .flashcard-source-meta {
@@ -2411,53 +2462,53 @@ select {
 }
 
 .flashcard-prompt {
-  padding: 14px 16px;
+  padding: 16px 18px;
   border-radius: var(--radius-md);
   background: var(--bg-surface-muted);
   border: 1px solid var(--border-subtle);
 }
 
-.flashcard-prompt .source-excerpt {
+.flashcard-question-text {
   margin: 0;
-  font-size: 14.5px;
-  line-height: 1.65;
-}
-
-.flashcard-reveal {
-  margin-top: auto;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  overflow: hidden;
-}
-
-.flashcard-reveal-summary {
-  list-style: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  font-size: 13.5px;
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.flashcard-cloze-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.72;
+  color: var(--text-primary);
+}
+
+.flashcard-blank {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 10px;
+  margin: 0 3px;
+  border-radius: 6px;
+  border: 1.5px dashed var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
-  cursor: pointer;
-  user-select: none;
-  background: rgba(79, 70, 229, 0.03);
+  font-weight: 600;
+  font-size: 0.92em;
+  vertical-align: baseline;
 }
 
-.flashcard-reveal-summary:hover {
-  background: rgba(79, 70, 229, 0.07);
+.flashcard-blank.filled {
+  border-style: solid;
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
-.flashcard-reveal-body {
-  padding: 14px;
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.flashcard-answer-box {
+.flashcard-answer-panel {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid var(--success-border);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2468,18 +2519,26 @@ select {
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--success-text);
 }
 
 .flashcard-answer-text {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.55;
   color: var(--text-primary);
 }
 
-.flashcard-rating-actions {
-  margin: 0;
+.flashcard-card-actions {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .flashcard-rate-btn.known[aria-pressed="true"] {
