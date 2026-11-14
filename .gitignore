@@ -1,0 +1,6 @@
+backend/.venv/
+backend/.env
+backend/media/
+**/__pycache__/
+*.py[cod]
+.DS_Store
