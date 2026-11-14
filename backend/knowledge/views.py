@@ -6,9 +6,15 @@ from rest_framework.views import APIView
 
 from courses.models import Course
 
-from .models import QuestionTopicLink, TopicSourceLink, normalize_name
+from .extraction import topic_supports_text
+from .models import QuestionTopicLink, TopicSourceLink
 from .service import (
-    InputsChanged, ProviderError, exam_questions, generate, openrouter_config, phrases, serialize_source,
+    InputsChanged,
+    ProviderError,
+    exam_questions,
+    generate,
+    openrouter_config,
+    serialize_source,
     source_chunks,
 )
 
@@ -25,33 +31,52 @@ class KnowledgeConflict(APIException):
 
 
 def graph_response(course, config):
-    sources = TopicSourceLink.objects.filter(chunk__in=source_chunks(course.pk)).select_related(
-        "chunk__material__source_material",
-    ).order_by("chunk_id")
-    questions = QuestionTopicLink.objects.filter(question__in=exam_questions(course.pk)).select_related(
-        "question",
-    ).order_by("question_id")
+    sources = (
+        TopicSourceLink.objects.filter(chunk__in=source_chunks(course.pk))
+        .select_related("chunk__material__source_material")
+        .order_by("-score", "chunk_id")
+    )
+    questions = (
+        QuestionTopicLink.objects.filter(question__in=exam_questions(course.pk))
+        .select_related("question")
+        .prefetch_related("question__source_links")
+        .order_by("question_id")
+    )
     topics = course.topics.order_by("normalized_name").prefetch_related(
-        Prefetch("source_links", queryset=sources), Prefetch("question_links", queryset=questions),
+        Prefetch("source_links", queryset=sources),
+        Prefetch("question_links", queryset=questions),
     )
     result = []
     for topic in topics:
-        key = topic.normalized_name
-        excerpts = [
-            serialize_source(link.chunk) for link in topic.source_links.all()
-            if any(phrase == key for phrase, _ in phrases(link.chunk.text))
+        keywords = topic.keywords or []
+        valid_source_links = [
+            link
+            for link in topic.source_links.all()
+            if topic_supports_text(topic.name, keywords, link.chunk.text)
         ]
-        if excerpts:
-            result.append({
-                "id": topic.pk,
-                "name": topic.name,
-                "description": topic.description,
-                "question_ids": [
-                    link.question_id for link in topic.question_links.all()
-                    if any(phrase == key for phrase, _ in phrases(link.question.text))
-                ],
-                "sources": excerpts,
-            })
+        if not valid_source_links:
+            continue
+        valid_chunk_ids = {link.chunk_id for link in valid_source_links}
+        excerpts = [
+            serialize_source(link.chunk, score=link.score, reason=link.reason)
+            for link in valid_source_links
+        ]
+        linked_q_ids = []
+        for link in topic.question_links.all():
+            if topic_supports_text(topic.name, keywords, link.question.text):
+                linked_q_ids.append(link.question_id)
+                continue
+            if any(qsl.chunk_id in valid_chunk_ids for qsl in link.question.source_links.all()):
+                linked_q_ids.append(link.question_id)
+
+        result.append({
+            "id": topic.pk,
+            "name": topic.name,
+            "description": topic.description,
+            "keywords": keywords,
+            "question_ids": sorted(set(linked_q_ids)),
+            "sources": excerpts,
+        })
     return Response({"openrouter_available": config is not None, "topics": result})
 
 

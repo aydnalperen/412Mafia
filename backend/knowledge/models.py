@@ -13,6 +13,7 @@ class Topic(models.Model):
     name = models.CharField(max_length=120)
     normalized_name = models.CharField(max_length=360, editable=False)
     description = models.TextField(blank=True)
+    keywords = models.JSONField(default=list, blank=True)
 
     class Meta:
         constraints = [
@@ -23,6 +24,8 @@ class Topic(models.Model):
         self.normalized_name = normalize_name(self.name)
         if not self.normalized_name:
             raise ValidationError({"name": "Topic name must contain text."})
+        if self.keywords is None:
+            self.keywords = []
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -34,6 +37,8 @@ class Topic(models.Model):
 class TopicSourceLink(models.Model):
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="source_links")
     chunk = models.ForeignKey("materials.SourceChunk", on_delete=models.CASCADE)
+    score = models.FloatField(default=1.0)
+    reason = models.CharField(max_length=240, blank=True, default="")
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["topic", "chunk"], name="unique_topic_chunk")]
@@ -50,6 +55,8 @@ class TopicSourceLink(models.Model):
 class QuestionTopicLink(models.Model):
     question = models.ForeignKey("exams.ExamQuestion", on_delete=models.CASCADE)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="question_links")
+    score = models.FloatField(default=1.0)
+    reason = models.CharField(max_length=240, blank=True, default="")
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["question", "topic"], name="unique_question_topic")]

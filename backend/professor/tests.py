@@ -186,3 +186,89 @@ class ProfessorDashboardTests(TestCase):
         deleted_mat = self.client.delete(f"/api/courses/{self.course.pk}/materials/{self.slides.pk}/")
         self.assertEqual(deleted_mat.status_code, 204)
         self.assertFalse(Material.objects.filter(pk=self.slides.pk).exists())
+
+    def test_link_questions_endpoint_and_topic_keywords_and_question_topics(self):
+        from courses.models import Course
+        from exams.models import ExamQuestion, QuestionSourceLink
+        from knowledge.models import QuestionTopicLink, Topic, TopicSourceLink
+        from materials.models import SourceChunk
+
+        other_course = Course.objects.create(name="Other Course")
+        other_mat = Material.objects.create(
+            course=other_course, file="materials/other.pdf", kind="slides", status="ready"
+        )
+        SourceChunk.objects.create(
+            material=other_mat,
+            sequence=0,
+            page_number=1,
+            text="Concurrency control with two phase locking and strict serializability.",
+        )
+
+        # Ensure a fresh question with no sources yet gets linked to matching course chunks.
+        unlinked_q = ExamQuestion.objects.create(
+            course=self.course,
+            material=self.exam,
+            question_number="2",
+            text="A. Concurrency control\nExplain strict two-phase locking and deadlock detection.",
+            page_number=2,
+        )
+        QuestionSourceLink.objects.filter(question=unlinked_q).delete()
+
+        # Invalid mode returns 400.
+        bad = self.client.post(
+            f"/api/courses/{self.course.pk}/professor/link-questions/",
+            data={"mode": "bogus"},
+            content_type="application/json",
+        )
+        self.assertEqual(bad.status_code, 400)
+
+        # Generate topics first and confirm dashboard exposes keywords and question topics.
+        topic = Topic.objects.create(
+            course=self.course,
+            name="Concurrency control",
+            normalized_name="concurrency control",
+            description="Locking protocols and serializability.",
+            keywords=["concurrency control", "two phase locking", "deadlock"],
+        )
+        slide_chunk = SourceChunk.objects.filter(material__course=self.course, material__kind="slides").first()
+        if slide_chunk is None:
+            slide_chunk = SourceChunk.objects.create(
+                material=self.slides,
+                sequence=99,
+                page_number=5,
+                text="Concurrency control uses strict two-phase locking and deadlock detection.",
+            )
+        TopicSourceLink.objects.get_or_create(topic=topic, chunk=slide_chunk)
+        QuestionTopicLink.objects.get_or_create(topic=topic, question=unlinked_q)
+
+        # Even if slide_chunk text wasn't matching yet, ensure course has matching slide text for unlinked_q.
+        matching_chunk = SourceChunk.objects.create(
+            material=self.slides,
+            sequence=100,
+            page_number=6,
+            text="Concurrency control: strict two-phase locking (2PL) and wait-for graphs for deadlock detection.",
+        )
+
+        res = self.client.post(
+            f"/api/courses/{self.course.pk}/professor/link-questions/",
+            data={"mode": "local"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        payload = res.json()
+
+        # Every linked chunk for unlinked_q must belong to self.course (never other_course).
+        linked_chunks = list(
+            QuestionSourceLink.objects.filter(question=unlinked_q).select_related("chunk__material")
+        )
+        self.assertGreaterEqual(len(linked_chunks), 1)
+        for link in linked_chunks:
+            self.assertEqual(link.chunk.material.course_id, self.course.pk)
+        self.assertTrue(any(link.chunk_id == matching_chunk.pk for link in linked_chunks))
+
+        q_row = next(row for row in payload["question_coverage"] if row["question_id"] == unlinked_q.pk)
+        self.assertGreaterEqual(q_row["source_count"], 1)
+        self.assertTrue(any(t["name"] == "Concurrency control" for t in q_row["topics"]))
+
+        t_row = next(row for row in payload["topic_alignment"] if row["topic_id"] == topic.pk)
+        self.assertEqual(t_row["keywords"], ["concurrency control", "two phase locking", "deadlock"])

@@ -94,7 +94,7 @@ export function KnowledgeWorkspace({
                 <path d="M7.3 8.1 10.7 15.8" />
                 <path d="M16.7 9.1 13.3 15.8" />
               </svg>
-              <span>Generate topics locally</span>
+              <span>Analyze subjects locally</span>
             </button>
             {graph.openrouter_available && (
               <button
@@ -119,7 +119,7 @@ export function KnowledgeWorkspace({
                   <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
                   <path d="M16 16h5v5" />
                 </svg>
-                <span>Re-analyze topics with OpenRouter</span>
+                <span>Analyze subjects with OpenRouter</span>
               </button>
             )}
           </div>
@@ -219,6 +219,15 @@ export function KnowledgeWorkspace({
                 </div>
                 {topic.description && (
                   <p className="kg-topic-desc">{topic.description}</p>
+                )}
+                {topic.keywords && topic.keywords.length > 0 && (
+                  <div className="material-badges" style={{ marginBottom: 10 }}>
+                    {topic.keywords.slice(0, 8).map((kw) => (
+                      <span key={kw} className="meta-chip">
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
                 )}
 
                 <h3 className="kg-subsection-title">Exam questions</h3>

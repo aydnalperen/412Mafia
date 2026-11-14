@@ -9,7 +9,12 @@ from exams.models import ExamQuestion
 from knowledge.models import Topic
 
 from .models import ProfessorFeedback
-from .service import course_coverage_report, generate_teaching_briefing, serialize_feedback
+from .service import (
+    course_coverage_report,
+    generate_teaching_briefing,
+    link_course_question_sources,
+    serialize_feedback,
+)
 
 
 class FeedbackCreateSerializer(serializers.Serializer):
@@ -136,6 +141,17 @@ class ProfessorInsightsView(APIView):
     def post(self, request, course_id):
         course = get_object_or_404(Course, pk=course_id)
         return Response(generate_teaching_briefing(course))
+
+
+class ProfessorLinkQuestionsView(APIView):
+    def post(self, request, course_id):
+        course = get_object_or_404(Course, pk=course_id)
+        mode = "local"
+        if isinstance(request.data, dict) and "mode" in request.data:
+            mode = request.data["mode"]
+            if mode not in ("local", "openrouter"):
+                raise serializers.ValidationError({"mode": "Mode must be local or openrouter."})
+        return Response(link_course_question_sources(course, mode=mode))
 
 
 class CoursePipelineView(APIView):

@@ -3,8 +3,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   apiErrorMessage,
+  knowledgeApi,
   professorApi,
   questionsApi,
+  type KnowledgeGraph,
   type ProfessorDashboard,
   type ProfessorFeedbackCategory,
   type ProfessorFeedbackItem,
@@ -46,6 +48,8 @@ export function ProfessorWorkspace({
   onOpenMaterials,
   onOpenOral,
   onFeedbackCountChanged,
+  onGraphChanged,
+  onCourseDataChanged,
 }: {
   courseId: string;
   onOpenQuestions?: (questionId?: string | number) => void;
@@ -53,12 +57,16 @@ export function ProfessorWorkspace({
   onOpenMaterials?: () => void;
   onOpenOral?: () => void;
   onFeedbackCountChanged?: (count: number) => void;
+  onGraphChanged?: (graph: KnowledgeGraph) => void;
+  onCourseDataChanged?: () => void;
 }) {
   const [dashboard, setDashboard] = useState<ProfessorDashboard | null>(null);
   const [briefing, setBriefing] = useState<ProfessorTeachingBriefing | null>(null);
   const [loading, setLoading] = useState(true);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [analyzingQuestionId, setAnalyzingQuestionId] = useState<number | null>(null);
+  const [linkingAll, setLinkingAll] = useState(false);
+  const [analyzingSubjects, setAnalyzingSubjects] = useState(false);
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [busyFeedbackId, setBusyFeedbackId] = useState<number | null>(null);
   const [questionFilter, setQuestionFilter] = useState<"all" | "gaps">("all");
@@ -107,10 +115,51 @@ export function ProfessorWorkspace({
           : "No matching lecture or slide excerpts met the evidence threshold."
       );
       await loadDashboard({ silent: true });
+      onCourseDataChanged?.();
     } catch (err) {
       setError(err);
     } finally {
       setAnalyzingQuestionId(null);
+    }
+  };
+
+  const handleLinkAllQuestions = async () => {
+    if (linkingAll || analyzingQuestionId !== null) return;
+    setLinkingAll(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const next = await professorApi.linkQuestions(courseId, "local");
+      setDashboard(next);
+      onFeedbackCountChanged?.(next.feedback.length);
+      onCourseDataChanged?.();
+      setStatusMessage(
+        `Matched evidence across ${next.summary.questions_with_sources} of ${next.summary.questions_total} exam questions.`
+      );
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLinkingAll(false);
+    }
+  };
+
+  const handleAnalyzeSubjects = async () => {
+    if (analyzingSubjects) return;
+    setAnalyzingSubjects(true);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const nextGraph = await knowledgeApi.generate(courseId, "local");
+      onGraphChanged?.(nextGraph);
+      onCourseDataChanged?.();
+      setStatusMessage(
+        `Analyzed ${nextGraph.topics.length} course subject${nextGraph.topics.length === 1 ? "" : "s"} from lectures and slides.`
+      );
+      await loadDashboard({ silent: true });
+    } catch (err) {
+      setError(err);
+    } finally {
+      setAnalyzingSubjects(false);
     }
   };
 
@@ -375,21 +424,33 @@ export function ProfessorWorkspace({
                 <span className="count-pill">{filteredQuestions.length}</span>
               </div>
 
-              <div className="flashcards-filters" role="group" aria-label="Filter questions">
-                <button
-                  type="button"
-                  className={`flashcards-filter-btn${questionFilter === "all" ? " active" : ""}`}
-                  onClick={() => setQuestionFilter("all")}
-                >
-                  All ({dashboard.question_coverage.length})
-                </button>
-                <button
-                  type="button"
-                  className={`flashcards-filter-btn${questionFilter === "gaps" ? " active" : ""}`}
-                  onClick={() => setQuestionFilter("gaps")}
-                >
-                  Needs attention ({attentionCount})
-                </button>
+              <div className="actions" style={{ marginTop: 0 }}>
+                {attentionCount > 0 && (
+                  <button
+                    type="button"
+                    className="btn small"
+                    disabled={linkingAll || analyzingQuestionId !== null}
+                    onClick={() => void handleLinkAllQuestions()}
+                  >
+                    {linkingAll ? "Matching…" : "Match missing questions"}
+                  </button>
+                )}
+                <div className="flashcards-filters" role="group" aria-label="Filter questions">
+                  <button
+                    type="button"
+                    className={`flashcards-filter-btn${questionFilter === "all" ? " active" : ""}`}
+                    onClick={() => setQuestionFilter("all")}
+                  >
+                    All ({dashboard.question_coverage.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`flashcards-filter-btn${questionFilter === "gaps" ? " active" : ""}`}
+                    onClick={() => setQuestionFilter("gaps")}
+                  >
+                    Needs attention ({attentionCount})
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -455,6 +516,11 @@ export function ProfessorWorkspace({
                               {q.feedback_count} note{q.feedback_count === 1 ? "" : "s"}
                             </span>
                           )}
+                          {q.topics?.slice(0, 3).map((t) => (
+                            <span key={t.id} className="meta-chip">
+                              {t.name}
+                            </span>
+                          ))}
                         </div>
 
                         <div className="prof-audit-sources">
@@ -523,6 +589,18 @@ export function ProfessorWorkspace({
                 <span className="count-pill">{dashboard.topic_alignment.length}</span>
               </div>
               <div className="actions" style={{ marginTop: 0 }}>
+                <button
+                  type="button"
+                  className="btn small secondary"
+                  disabled={analyzingSubjects}
+                  onClick={() => void handleAnalyzeSubjects()}
+                >
+                  {analyzingSubjects
+                    ? "Analyzing…"
+                    : dashboard.topic_alignment.length === 0
+                      ? "Analyze subjects"
+                      : "Refresh subjects"}
+                </button>
                 {onOpenKnowledge && (
                   <button
                     type="button"
@@ -547,8 +625,16 @@ export function ProfessorWorkspace({
             {dashboard.topic_alignment.length === 0 ? (
               <div className="empty">
                 <span>
-                  Generate topics in Knowledge graph to compare lecture coverage against past exam questions.
+                  Analyze course subjects to compare lecture coverage against past exam questions.
                 </span>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={analyzingSubjects}
+                  onClick={() => void handleAnalyzeSubjects()}
+                >
+                  {analyzingSubjects ? "Analyzing…" : "Analyze subjects"}
+                </button>
               </div>
             ) : (
               <div className="prof-topics-grid">
@@ -569,6 +655,11 @@ export function ProfessorWorkspace({
                             {statusMeta.label}
                           </span>
                         </div>
+                        {topic.keywords && topic.keywords.length > 0 && (
+                          <div className="note" style={{ margin: "3px 0 0", fontSize: "0.8rem" }}>
+                            {topic.keywords.slice(0, 5).join(" · ")}
+                          </div>
+                        )}
                         <div className="meta-row" style={{ marginTop: 6 }}>
                           <span className="meta-chip">{topic.slide_chunks} slides</span>
                           <span className="meta-chip">{topic.transcript_chunks} lecture</span>

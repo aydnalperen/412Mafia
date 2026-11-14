@@ -721,6 +721,7 @@ export default function CoursePage({
               courseId={id}
               onGraphChanged={(nextGraph) => {
                 setGraph(nextGraph);
+                void refreshCourseOverview({ silent: true });
               }}
             />
           )}
@@ -779,6 +780,12 @@ export default function CoursePage({
               onOpenMaterials={() => switchTab("materials")}
               onOpenOral={() => switchTab("oral")}
               onFeedbackCountChanged={(count) => setFeedbackCount(count)}
+              onGraphChanged={(nextGraph) => {
+                setGraph(nextGraph);
+              }}
+              onCourseDataChanged={() => {
+                void refreshCourseOverview({ silent: true });
+              }}
             />
           )}
         </>

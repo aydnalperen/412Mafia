@@ -209,13 +209,68 @@
 
 .node text {
   pointer-events: none;
-  fill: #f8fafc;
-  font-size: 13px;
+  fill: #e2e8f0;
+  font-size: 12.5px;
   font-weight: 500;
+}
+
+.columnHeaders text {
+  fill: #64748b;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.topicHalo {
+  fill: none;
+  stroke: #60a5fa;
+  stroke-width: 1.5;
+  stroke-opacity: 0;
+  pointer-events: none;
+  transition: stroke-opacity 180ms ease;
+}
+
+.topicPill {
+  fill: #16233b;
+  stroke: #334155;
+  stroke-width: 1.25;
+  transition: fill 180ms ease, stroke 180ms ease;
+}
+
+.topicLabel {
+  fill: #f8fafc !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+}
+
+.leafLabel {
+  fill: #cbd5e1 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
   paint-order: stroke;
   stroke: #0f172a;
-  stroke-width: 4.5px;
+  stroke-width: 4px;
   stroke-linejoin: round;
+}
+
+.node:hover .topicPill,
+.node:focus-visible .topicPill,
+.node[aria-pressed="true"] .topicPill,
+.node[data-spotlight="true"] .topicPill {
+  fill: #1e3a5f;
+  stroke: #60a5fa;
+}
+
+.node[data-spotlight="true"] .topicHalo,
+.node[data-neighbor="true"] .topicHalo {
+  stroke-opacity: 0.6;
+}
+
+.keywordRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
 }
 
 .detail {

@@ -201,8 +201,9 @@ export type KnowledgeGraph = {
     id: number;
     name: string;
     description: string;
+    keywords?: string[];
     question_ids: number[];
-    sources: (CourseSource & { text: string })[];
+    sources: (CourseSource & { text: string; score?: number; reason?: string })[];
   }[];
 };
 
@@ -375,6 +376,7 @@ export type TopicAlignment = {
   topic_id: number;
   name: string;
   description: string;
+  keywords?: string[];
   slide_chunks: number;
   transcript_chunks: number;
   study_chunks: number;
@@ -397,6 +399,7 @@ export type QuestionCoverage = {
   top_score: number;
   coverage_status: "supported" | "partial" | "uncovered";
   feedback_count: number;
+  topics?: { id: number; name: string }[];
 };
 
 export type RecurringWeakness = {
@@ -514,5 +517,13 @@ export const professorApi = {
   generateInsights: (courseId: string | number): Promise<ProfessorTeachingBriefing> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/insights/`, {
       method: "POST",
+    }),
+  linkQuestions: (
+    courseId: string | number,
+    mode: "local" | "openrouter" = "local",
+  ): Promise<ProfessorDashboard> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/link-questions/`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
     }),
 };

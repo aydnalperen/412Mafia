@@ -11,10 +11,11 @@ from rest_framework.exceptions import APIException, ValidationError
 from ai.budget import budget_allows_llm, budget_summary, record_llm_usage
 from exams.models import ExamQuestion, OralSession, OralTurn, QuestionSourceLink
 from exams.oral import oral_source
-from exams.service import tokens
+from exams.service import sources_for, tokens
 from flashcards.models import Flashcard
+from knowledge.extraction import domain_tokens, extract_course_noise, is_blocked_concept, topic_supports_text
 from knowledge.models import QuestionTopicLink, TopicSourceLink
-from knowledge.service import openrouter_config, phrases, source_chunks
+from knowledge.service import openrouter_config, source_chunks
 from materials.models import Material, SourceChunk
 from transcription.models import TranscriptionJob
 
@@ -175,7 +176,11 @@ def course_coverage_report(course):
     topic_sources_qs = TopicSourceLink.objects.filter(chunk__in=ready_chunks).select_related(
         "chunk__material"
     )
-    topic_questions_qs = QuestionTopicLink.objects.filter(question__in=questions).select_related("question")
+    topic_questions_qs = (
+        QuestionTopicLink.objects.filter(question__in=questions)
+        .select_related("question")
+        .prefetch_related("question__source_links")
+    )
     topics = list(
         course.topics.order_by("normalized_name").prefetch_related(
             Prefetch("source_links", queryset=topic_sources_qs),
@@ -183,30 +188,55 @@ def course_coverage_report(course):
         )
     )
 
+    course_noise = extract_course_noise(course, ready_chunks, questions)
     topic_alignment = []
+    topics_by_question = defaultdict(list)
+
     for topic in topics:
-        key = topic.normalized_name
+        if is_blocked_concept(topic.name, course_noise):
+            continue
+        keywords = topic.keywords or []
         valid_source_links = [
             link
             for link in topic.source_links.all()
-            if any(phrase == key for phrase, _ in phrases(link.chunk.text))
+            if topic_supports_text(topic.name, keywords, link.chunk.text)
         ]
         if not valid_source_links:
             continue
+        valid_chunk_ids = {link.chunk_id for link in valid_source_links}
         slide_count = sum(1 for l in valid_source_links if l.chunk.material.kind == Material.Kind.SLIDES)
         transcript_count = sum(1 for l in valid_source_links if l.chunk.material.kind == Material.Kind.TRANSCRIPT)
         study_count = sum(1 for l in valid_source_links if l.chunk.material.kind == Material.Kind.STUDY)
-        linked_questions = [
-            {"id": l.question_id, "question_number": l.question.question_number}
-            for l in topic.question_links.all()
-            if any(phrase == key for phrase, _ in phrases(l.question.text))
-        ]
+
+        seen_q_ids = set()
+        linked_questions = []
+        for q_link in topic.question_links.all():
+            if q_link.question_id in seen_q_ids:
+                continue
+            matches_text = topic_supports_text(topic.name, keywords, q_link.question.text)
+            shares_chunk = any(qsl.chunk_id in valid_chunk_ids for qsl in q_link.question.source_links.all())
+            if matches_text or shares_chunk:
+                seen_q_ids.add(q_link.question_id)
+                linked_questions.append({"id": q_link.question_id, "question_number": q_link.question.question_number})
+                topics_by_question[q_link.question_id].append({"id": topic.pk, "name": topic.name})
+
+        # Also catch verified exam-to-chunk evidence when both topic and question cite the exact same chunk.
+        for q in questions:
+            if q.pk in seen_q_ids:
+                continue
+            q_chunk_ids = {l.chunk_id for l in q.source_links.all()}
+            if (q_chunk_ids & valid_chunk_ids) and topic_supports_text(topic.name, keywords, q.text):
+                seen_q_ids.add(q.pk)
+                linked_questions.append({"id": q.pk, "question_number": q.question_number})
+                topics_by_question[q.pk].append({"id": topic.pk, "name": topic.name})
+
         topic_chunk_ids = {l.chunk_id for l in valid_source_links}
-        topic_words = tokens(topic.name)
+        topic_words = domain_tokens(" ".join([topic.name, *keywords])) | tokens(topic.name)
         weakness_hits = sum(
             1
             for w in recurring_weaknesses
-            if (set(w["chunk_ids"]) & topic_chunk_ids) or (topic_words and (topic_words & tokens(w["concept"])))
+            if (set(w["chunk_ids"]) & topic_chunk_ids)
+            or (topic_words and (topic_words & (domain_tokens(w["concept"]) | tokens(w["concept"]))))
         )
         total_teaching = slide_count + transcript_count + study_count
         if linked_questions and total_teaching >= 2:
@@ -220,6 +250,7 @@ def course_coverage_report(course):
                 "topic_id": topic.pk,
                 "name": topic.name,
                 "description": topic.description,
+                "keywords": keywords[:6],
                 "slide_chunks": slide_count,
                 "transcript_chunks": transcript_count,
                 "study_chunks": study_count,
@@ -260,6 +291,7 @@ def course_coverage_report(course):
                 "top_score": top_score,
                 "coverage_status": q_status,
                 "feedback_count": feedback_by_question[q.pk],
+                "topics": topics_by_question.get(q.pk, []),
             }
         )
 
@@ -344,6 +376,20 @@ def course_coverage_report(course):
         "ai_budget": budget_summary(course.pk),
         "feedback": [serialize_feedback(item) for item in feedback_items],
     }
+
+
+def link_course_question_sources(course, *, mode="local"):
+    questions = (
+        ExamQuestion.objects.filter(course=course, material__course=course, material__status=Material.Status.READY)
+        .select_related("material")
+        .prefetch_related("source_links")
+        .order_by("id")
+    )
+    use_llm = mode == "openrouter"
+    for question in questions:
+        if not question.source_links.exists():
+            sources_for(question, use_llm=use_llm)
+    return course_coverage_report(course)
 
 
 def generate_teaching_briefing(course):

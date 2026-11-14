@@ -22,9 +22,13 @@ QUESTION = re.compile(r"^\s*(?:(?:Soru|Question|Q)\s*)?(\d{1,3})[.):\s-]+(\S.*)$
 SECTION = re.compile(r"^\s*([A-Z])[.)]\s+(.+\(\d+\s+points?\b.*\))\s*$", re.IGNORECASE)
 SOLUTION = re.compile(r"^\s*(?:Solutions?|Answers?)\s*[.:]?\s*$", re.IGNORECASE)
 WORDS = re.compile(r"[^\W_]+", re.UNICODE)
+CONTROL_GLYPHS = re.compile(r"[\uf000-\uf8ff\x00-\x08\x0b-\x1f]")
+REPEATED_GLITCH = re.compile(r"\b([A-Za-zÀ-ÖØ-öø-ÿ]{3,18})\1{2,}\b")
+SHORT_ACRONYMS = {"db", "er", "io", "pk", "fk", "ts", "os", "ai", "ml"}
 STOP = set("a an and are as at be by can do does for from how in is of on or the to what when where which why with "
            "all also any but could each have has if into its may more must not one only other our over per "
            "please point points should such than that their them there these this those through use used using well will would you your "
+           "consider following describe explain compare establish justify present assume assuming suppose scenario scenarios "
            "ve veya bir bu şu için ile nasıl nedir hangi olarak olur olan da de mi mı mu mü".split())
 logger = logging.getLogger(__name__)
 
@@ -35,9 +39,26 @@ class SourceProviderError(APIException):
     default_detail = "OpenRouter matching failed; saved sources were not changed. Check the backend model and account guardrails."
 
 
+def _stem_token(word):
+    if len(word) > 4 and word.endswith("s") and not word.endswith(("ss", "us", "is", "as")):
+        return word[:-1]
+    if word == "dbs":
+        return "db"
+    return word
+
+
 def tokens(text):
-    return {word[:-1] if len(word) > 4 and word.endswith("s") and not word.endswith("ss") else word
-            for word in WORDS.findall(text.casefold()) if len(word) >= 3 and word not in STOP and not word.isdigit()}
+    cleaned = REPEATED_GLITCH.sub(r"\1", CONTROL_GLYPHS.sub(" ", text or ""))
+    out = set()
+    for match in WORDS.finditer(cleaned):
+        raw = match.group(0)
+        low = raw.casefold()
+        if low.isdigit() or low in STOP:
+            continue
+        if len(low) < 3 and not (raw.isupper() and low in SHORT_ACRONYMS):
+            continue
+        out.add(_stem_token(low))
+    return out
 
 
 def extract_questions(material):
@@ -131,9 +152,11 @@ def rerank_with_openrouter(question, candidates):
         raise SourceProviderError() from exc
 
 
-def sources_for(question):
+def sources_for(question, *, use_llm=True):
     query = tokens(question.text)
-    heading = tokens(question.text.splitlines()[0]) if question.question_number.isalpha() else set()
+    first_line = question.text.splitlines()[0] if question.text else ""
+    heading_text = first_line.split("(", 1)[0] if question.question_number.isalpha() else ""
+    heading = tokens(heading_text) if heading_text else set()
     candidates = list(SourceChunk.objects.filter(
         material__course_id=question.course_id, material__status=Material.Status.READY,
         material__kind__in=[Material.Kind.TRANSCRIPT, Material.Kind.SLIDES, Material.Kind.STUDY],
@@ -144,11 +167,22 @@ def sources_for(question):
     if len(query) >= 2:
         for chunk, words in documents:
             overlap = query & words
-            if len(overlap) < (3 if heading else 2) or (heading and not heading & words):
+            heading_overlap = heading & words if heading else set()
+            exact_subject_heading = bool(heading) and heading <= words and any(
+                math.log((len(documents) + 1) / (frequency[w] + 1)) >= 1.2 for w in heading
+            )
+            if heading:
+                if not heading_overlap:
+                    continue
+                if len(overlap) < 2 and not exact_subject_heading:
+                    continue
+            elif len(overlap) < 2:
                 continue
-            score = round(sum(math.log((len(documents) + 1) / (frequency[word] + 1)) + 1 for word in overlap)
-                          / math.sqrt(len(words) or 1), 4)
-            if score < 0.8:
+            idf_sum = sum(math.log((len(documents) + 1) / (frequency[word] + 1)) + 1 for word in overlap)
+            if exact_subject_heading:
+                idf_sum += 1.2
+            score = round(idf_sum / math.sqrt(min(len(words), 64) or 1), 4)
+            if score < 0.7:
                 continue
             ranked.append((score, chunk, ", ".join(sorted(overlap)[:5])))
     ranked.sort(key=lambda item: (-item[0], item[1].pk))
@@ -156,7 +190,7 @@ def sources_for(question):
     candidates = []
     for kind in (Material.Kind.TRANSCRIPT, Material.Kind.SLIDES, Material.Kind.STUDY):
         candidates.extend([item for item in ranked if item[1].material.kind == kind][:4])
-    best = rerank_with_openrouter(question, candidates) if candidates else None
+    best = rerank_with_openrouter(question, candidates) if (use_llm and candidates) else None
     method = "openrouter" if best is not None else "keyword-idf"
     best = best if best is not None else ranked[:5]
     ids = [chunk.pk for _, chunk, _ in best]

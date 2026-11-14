@@ -13,6 +13,7 @@ from professor.views import (
     ProfessorFeedbackDetailView,
     ProfessorFeedbackListCreateView,
     ProfessorInsightsView,
+    ProfessorLinkQuestionsView,
 )
 from transcription.views import JobView, RecordingsView, TranscriptView
 
@@ -36,6 +37,7 @@ urlpatterns = [
     path("api/courses/<int:course_id>/materials/<int:material_id>/", MaterialDetailView.as_view(), name="course-material-detail"),
     path("api/courses/<int:course_id>/recordings/", RecordingsView.as_view(), name="course-recordings"),
     path("api/courses/<int:course_id>/professor/", ProfessorDashboardView.as_view(), name="professor-dashboard"),
+    path("api/courses/<int:course_id>/professor/link-questions/", ProfessorLinkQuestionsView.as_view(), name="professor-link-questions"),
     path("api/courses/<int:course_id>/professor/feedback/", ProfessorFeedbackListCreateView.as_view(), name="professor-feedback"),
     path("api/courses/<int:course_id>/professor/feedback/<int:feedback_id>/", ProfessorFeedbackDetailView.as_view(), name="professor-feedback-detail"),
     path("api/courses/<int:course_id>/professor/insights/", ProfessorInsightsView.as_view(), name="professor-insights"),

@@ -9,6 +9,7 @@ from rest_framework.exceptions import ValidationError
 
 from ai.budget import budget_allows_llm, record_llm_usage
 from exams.service import WORDS, tokens
+from knowledge.extraction import clean_source_noise, normalize_name, stem_word, topic_supports_text
 from knowledge.service import openrouter_config, phrases, serialize_source, source_chunks
 
 from .models import Flashcard
@@ -42,14 +43,44 @@ def card_data(card):
     }
 
 
+def _find_target_in_text(topic, text):
+    cleaned = clean_source_noise(text)
+    candidates = [topic.name] + sorted(
+        (k for k in (topic.keywords or []) if isinstance(k, str) and k.strip()),
+        key=len,
+        reverse=True,
+    )
+    for phrase in candidates:
+        p = normalize_name(phrase)
+        if not p:
+            continue
+        p_words = [w for w in WORDS.findall(p) if w]
+        if not p_words:
+            continue
+        regex = r"(?<!\w)" + r"[\s,/\-–—]+".join(re.escape(w) + r"s?" for w in p_words) + r"(?!\w)"
+        match = re.search(regex, cleaned, re.IGNORECASE)
+        if match:
+            return match.group(0)
+    topic_stems = {stem_word(w) for w in tokens(topic.name)}
+    return max(
+        (
+            word
+            for word in WORDS.findall(cleaned)
+            if len(word) <= 120 and stem_word(word) in topic_stems
+        ),
+        key=len,
+        default="",
+    )
+
+
 def topic_targets(topic):
     linked_ids = topic.source_links.values("chunk_id")
     chunks = source_chunks(topic.course_id).filter(pk__in=linked_ids).order_by("pk")
+    keywords = topic.keywords or []
     for chunk in chunks:
-        target = next(
-            (label for key, label in phrases(chunk.text) if key == topic.normalized_name),
-            None,
-        )
+        if not topic_supports_text(topic.name, keywords, chunk.text):
+            continue
+        target = _find_target_in_text(topic, chunk.text)
         if target:
             yield chunk, target
 
@@ -91,7 +122,7 @@ def oral_targets(session):
 
 
 def clean_source_text(text):
-    cleaned = CONTROL_GLYPHS.sub(" ", text or "")
+    cleaned = clean_source_noise(CONTROL_GLYPHS.sub(" ", text or ""))
     lines = []
     for raw_line in cleaned.replace("\r\n", "\n").replace("\r", "\n").splitlines():
         line = LEADING_LIST_MARKER.sub("", raw_line.strip())
