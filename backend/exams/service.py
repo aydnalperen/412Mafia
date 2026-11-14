@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from django.db import transaction
 from rest_framework.exceptions import APIException
 
+from ai.budget import budget_allows_llm, record_llm_usage
 from materials.models import Material, SourceChunk
 
 from .models import ExamQuestion, QuestionSourceLink
@@ -72,7 +73,7 @@ def rerank_with_openrouter(question, candidates):
     """Only accept citations to the supplied same-course candidates."""
     key = os.environ.get("OPENROUTER_API_KEY")
     model = os.environ.get("OPENROUTER_FAST_MODEL")
-    if not key or not model or not candidates:
+    if not key or not model or not candidates or not budget_allows_llm():
         return None
     by_id = {chunk.pk: chunk for _, chunk, _ in candidates}
     payload = {
@@ -104,6 +105,7 @@ def rerank_with_openrouter(question, candidates):
         })
         with request.urlopen(req, timeout=15) as response:
             result = json.loads(response.read(65537))
+        record_llm_usage("question_matching", model, result, course=question.course)
         content = json.loads(result["choices"][0]["message"]["content"])
         matches = content["matches"]
         if not isinstance(matches, list) or len(matches) > 5:

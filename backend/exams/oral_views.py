@@ -9,6 +9,36 @@ from .models import ExamQuestion, OralSession
 from .oral import answer_session, session_data, start
 
 
+class OralSessionListView(APIView):
+    def get(self, request, course_id):
+        course = get_object_or_404(Course, pk=course_id)
+        sessions = (
+            OralSession.objects.filter(course=course)
+            .select_related("question")
+            .prefetch_related("turns")
+            .order_by("-started_at", "-id")[:20]
+        )
+        items = []
+        for s in sessions:
+            turns = list(s.turns.all())
+            acc = [t.feedback.get("accuracy") for t in turns if isinstance(t.feedback, dict) and type(t.feedback.get("accuracy")) is int]
+            comp = [t.feedback.get("completeness") for t in turns if isinstance(t.feedback, dict) and type(t.feedback.get("completeness")) is int]
+            items.append({
+                "id": s.pk,
+                "course_id": s.course_id,
+                "question_id": s.question_id,
+                "question_number": s.question.question_number,
+                "question_text": s.question.text,
+                "status": s.status,
+                "turns_count": len(turns),
+                "avg_accuracy": round(sum(acc) / len(acc), 2) if acc else None,
+                "avg_completeness": round(sum(comp) / len(comp), 2) if comp else None,
+                "missing_concepts": (s.report or {}).get("missing_concepts", []) if isinstance(s.report, dict) else [],
+                "started_at": s.started_at.isoformat(),
+            })
+        return Response(items)
+
+
 class OralStartView(APIView):
     def post(self, request, course_id):
         course = get_object_or_404(Course, pk=course_id)

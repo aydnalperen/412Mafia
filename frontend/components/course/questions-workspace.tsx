@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { FormattedSourceText } from "@/components/formatted-source";
 import {
   apiErrorMessage,
+  professorApi,
   questionsApi,
+  type ProfessorFeedbackItem,
   type Question,
   type QuestionSource,
 } from "@/lib/api";
@@ -22,10 +24,16 @@ export function QuestionsWorkspace({
   onOpenMaterials?: () => void;
 }) {
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [feedbackNotes, setFeedbackNotes] = useState<ProfessorFeedbackItem[]>([]);
   const [selected, setSelected] = useState<Question | null>(null);
   const [sources, setSources] = useState<QuestionSource[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [sourceLoading, setSourceLoading] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualNumber, setManualNumber] = useState("");
+  const [manualPage, setManualPage] = useState("");
+  const [manualText, setManualText] = useState("");
+  const [creatingQuestion, setCreatingQuestion] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   const selectQuestion = useCallback(async (question: Question) => {
@@ -46,8 +54,12 @@ export function QuestionsWorkspace({
     setLoading(true);
     setError(null);
     try {
-      const items = await questionsApi.list(courseId);
+      const [items, notes] = await Promise.all([
+        questionsApi.list(courseId),
+        professorApi.listFeedback(courseId).catch(() => []),
+      ]);
       setQuestions(items);
+      setFeedbackNotes(notes);
       if (initialQuestionId != null) {
         const match = items.find(
           (entry) => String(entry.id) === String(initialQuestionId)
@@ -62,6 +74,31 @@ export function QuestionsWorkspace({
       setLoading(false);
     }
   }, [courseId, initialQuestionId, selectQuestion]);
+
+  const createManualQuestion = async (event: FormEvent) => {
+    event.preventDefault();
+    if (creatingQuestion) return;
+    setCreatingQuestion(true);
+    setError(null);
+    try {
+      const parsedPage = manualPage.trim() ? Number(manualPage.trim()) : null;
+      const created = await questionsApi.create(courseId, {
+        question_number: manualNumber.trim() || undefined,
+        text: manualText.trim(),
+        page_number: parsedPage && Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : null,
+      });
+      setQuestions((prev) => [...prev, created]);
+      setManualNumber("");
+      setManualPage("");
+      setManualText("");
+      setShowManualForm(false);
+      void selectQuestion(created);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setCreatingQuestion(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -102,6 +139,11 @@ export function QuestionsWorkspace({
 
   if (selected) {
     const parsedSelected = splitQuestionTitleAndBody(selected.text);
+    const matchingNotes = feedbackNotes.filter(
+      (n) =>
+        n.question_id === Number(selected.id) ||
+        (n.is_pinned && n.question_id == null)
+    );
     return (
       <>
         <div className="page-nav" style={{ marginBottom: 16 }}>
@@ -167,6 +209,28 @@ export function QuestionsWorkspace({
                 </span>
               </p>
             </div>
+
+            {matchingNotes.length > 0 && (
+              <div className="instructor-notes-stack" aria-label="Instructor feedback notes">
+                {matchingNotes.map((note) => (
+                  <div key={note.id} className="instructor-note-card">
+                    <div className="question-item-header">
+                      <span className="badge teal-badge">Instructor Note</span>
+                      <span className="meta-chip">
+                        {note.question_id === Number(selected.id)
+                          ? `Q${selected.question_number}`
+                          : "Course-wide"}
+                      </span>
+                    </div>
+                    <strong>{note.title}</strong>
+                    <p>{note.comment}</p>
+                    <span className="note" style={{ margin: 0 }}>
+                      {note.author_name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section aria-label="Candidate sources">
@@ -305,94 +369,175 @@ export function QuestionsWorkspace({
     );
   }
 
-  return questions.length === 0 ? (
-    <p className="empty">
-      <span className="empty-icon" aria-hidden="true">
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="section-header" style={{ marginBottom: 0 }}>
+        <div className="section-title-group">
+          <h2>Extracted &amp; manual questions</h2>
+          <span className="count-pill">{questions.length}</span>
+        </div>
+        <button
+          type="button"
+          className="btn small secondary"
+          onClick={() => setShowManualForm((prev) => !prev)}
         >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-          <path d="M12 17h.01" />
-        </svg>
-      </span>
-      <span>
-        No exam questions found for this course yet. Upload a past exam on{" "}
-        {onOpenMaterials ? (
-          <button
-            type="button"
-            className="link"
-            style={{ background: "none", border: "none", padding: 0 }}
-            onClick={onOpenMaterials}
-          >
-            Materials
-          </button>
-        ) : (
-          <a href={`/courses/${courseId}/materials`} className="link">
-            materials
-          </a>
-        )}
-        .
-      </span>
-    </p>
-  ) : (
-    <ul className="course-list questions-cards-grid">
-      {questions.map((question) => {
-        const parsed = splitQuestionTitleAndBody(question.text);
-        return (
-          <li className="question-item-card" key={question.id}>
-            <div className="course-item-main">
-              <div className="question-item-header">
-                <span className="question-num-badge tabular">
-                  Question {question.question_number}
-                </span>
-                {question.page_number != null && (
-                  <span className="meta-chip mono">
-                    p. {question.page_number}
-                  </span>
-                )}
+          {showManualForm ? "Cancel" : "+ Add manual question"}
+        </button>
+      </div>
+
+      {showManualForm && (
+        <section className="card" aria-label="Add manual exam question">
+          <h3 style={{ marginTop: 0, marginBottom: 8 }}>Add past-exam question</h3>
+          <p className="note" style={{ marginTop: 0, marginBottom: 14 }}>
+            Fallback when PDF parsing misses an irregular question. Manual questions support full source matching, oral exams, and instructor feedback.
+          </p>
+          <form onSubmit={(e) => void createManualQuestion(e)}>
+            <div className="professor-form-row">
+              <div className="field">
+                <label htmlFor="manual-q-number">Question number (optional)</label>
+                <input
+                  id="manual-q-number"
+                  type="text"
+                  maxLength={50}
+                  value={manualNumber}
+                  onChange={(e) => setManualNumber(e.target.value)}
+                  placeholder="e.g. 5a"
+                />
               </div>
-              {parsed.title && (
-                <h3 className="question-preview-title">{parsed.title}</h3>
-              )}
-              <p className="question-preview-body">{parsed.body}</p>
+              <div className="field">
+                <label htmlFor="manual-q-page">Exam page (optional)</label>
+                <input
+                  id="manual-q-page"
+                  type="number"
+                  min={1}
+                  value={manualPage}
+                  onChange={(e) => setManualPage(e.target.value)}
+                  placeholder="e.g. 3"
+                />
+              </div>
             </div>
-            <div className="question-item-footer">
-              <span className="course-meta" style={{ marginTop: 0 }}>
-                {question.material_title}
-              </span>
+            <div className="field">
+              <label htmlFor="manual-q-text">Question text</label>
+              <textarea
+                id="manual-q-text"
+                rows={3}
+                required
+                minLength={8}
+                maxLength={4000}
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                placeholder="Paste or type the exact past-exam question prompt…"
+              />
+            </div>
+            <button
+              type="submit"
+              className="btn small"
+              disabled={creatingQuestion || manualText.trim().length < 8}
+            >
+              {creatingQuestion ? "Adding question…" : "Save question"}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {questions.length === 0 ? (
+        <p className="empty">
+          <span className="empty-icon" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <path d="M12 17h.01" />
+            </svg>
+          </span>
+          <span>
+            No exam questions found for this course yet. Upload a past exam on{" "}
+            {onOpenMaterials ? (
               <button
                 type="button"
-                className="btn small secondary"
-                onClick={() => void selectQuestion(question)}
+                className="link"
+                style={{ background: "none", border: "none", padding: 0 }}
+                onClick={onOpenMaterials}
               >
-                <span>Open</span>
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M5 12h14" />
-                  <path d="m12 5 7 7-7 7" />
-                </svg>
+                Materials
               </button>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+            ) : (
+              <a href={`/courses/${courseId}/materials`} className="link">
+                materials
+              </a>
+            )}
+            {" "}or click <strong>+ Add manual question</strong> above.
+          </span>
+        </p>
+      ) : (
+        <ul className="course-list questions-cards-grid">
+          {questions.map((question) => {
+            const parsed = splitQuestionTitleAndBody(question.text);
+            const qNotesCount = feedbackNotes.filter(
+              (n) => n.question_id === Number(question.id)
+            ).length;
+            return (
+              <li className="question-item-card" key={question.id}>
+                <div className="course-item-main">
+                  <div className="question-item-header">
+                    <span className="question-num-badge tabular">
+                      Question {question.question_number}
+                    </span>
+                    {question.page_number != null && (
+                      <span className="meta-chip mono">
+                        p. {question.page_number}
+                      </span>
+                    )}
+                    {qNotesCount > 0 && (
+                      <span className="badge teal-badge" style={{ marginLeft: "auto", textTransform: "none" }}>
+                        {qNotesCount} instructor note{qNotesCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
+                  {parsed.title && (
+                    <h3 className="question-preview-title">{parsed.title}</h3>
+                  )}
+                  <p className="question-preview-body">{parsed.body}</p>
+                </div>
+                <div className="question-item-footer">
+                  <span className="course-meta" style={{ marginTop: 0 }}>
+                    {question.material_title}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn small secondary"
+                    onClick={() => void selectQuestion(question)}
+                  >
+                    <span>Open</span>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12h14" />
+                      <path d="m12 5 7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }

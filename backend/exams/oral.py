@@ -6,6 +6,7 @@ from urllib import request
 from django.db import transaction
 from rest_framework.exceptions import APIException, ValidationError
 
+from ai.budget import budget_allows_llm, record_llm_usage
 from knowledge.service import openrouter_config
 from materials.models import Material
 
@@ -90,6 +91,8 @@ def evaluate(session, answer, sources):
     key, model, url = openrouter_config() or (None, None, None)
     if not key:
         raise OralProviderError("OpenRouter is not configured; your answer was not saved.")
+    if not budget_allows_llm():
+        raise OralProviderError("Configured AI budget limit reached; your answer was not saved.")
     allowed = {chunk.pk for chunk in sources}
     payload = {
         "model": model, "response_format": {"type": "json_object"}, "temperature": 0,
@@ -122,6 +125,7 @@ def evaluate(session, answer, sources):
         })
         with request.urlopen(req, timeout=25) as response:
             result = json.loads(response.read(65537))
+        record_llm_usage("oral_examiner", model, result, course=session.course)
         content = result["choices"][0]["message"]["content"]
         data = json.loads(content)
         feedback = data["feedback"]

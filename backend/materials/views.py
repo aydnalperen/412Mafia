@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser
@@ -28,3 +29,20 @@ class CourseMaterialsView(APIView):
             from exams.service import extract_questions
             extract_questions(material)
         return Response(MaterialSerializer(material).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class MaterialDetailView(APIView):
+    def delete(self, request, course_id, material_id):
+        course = get_object_or_404(Course, pk=course_id)
+        material = get_object_or_404(Material, pk=material_id, course=course)
+        with transaction.atomic():
+            material.derived_materials.update(source_material=None)
+            storage = material.file.storage if material.file else None
+            name = material.file.name if material.file else ""
+            material.delete()
+        if storage and name:
+            try:
+                storage.delete(name)
+            except OSError:
+                pass
+        return Response(status=status.HTTP_204_NO_CONTENT)

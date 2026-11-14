@@ -75,6 +75,10 @@ export function MaterialsWorkspace({
   );
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | number | null>(
+    null
+  );
+  const [removingId, setRemovingId] = useState<string | number | null>(null);
 
   const recordingInputRef = useRef<HTMLInputElement | null>(null);
   const materialInputRef = useRef<HTMLInputElement | null>(null);
@@ -193,6 +197,31 @@ export function MaterialsWorkspace({
       cancelled = true;
     };
   }, [courseId, job?.id, job?.status, job?.progress, initialTranscriptMaterialId]);
+
+  async function handleRemoveMaterial(item: Material) {
+    if (removingId !== null) return;
+    setRemovingId(item.id);
+    setError(null);
+    setStatusNotice(null);
+    try {
+      await materialsApi.remove(courseId, item.id);
+      setMaterials((prev) => prev.filter((m) => m.id !== item.id));
+      if (
+        activeTranscriptMaterial &&
+        String(activeTranscriptMaterial.id) === String(item.id)
+      ) {
+        setTranscript(null);
+        setActiveTranscriptMaterial(null);
+      }
+      setConfirmRemoveId(null);
+      setStatusNotice(`Removed "${item.file_name}" from course materials.`);
+      onMaterialsChanged?.();
+    } catch (cause) {
+      setError(apiErrorMessage(cause));
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   async function openTranscript(material: Material) {
     if (transcriptLoading) return;
@@ -940,6 +969,34 @@ export function MaterialsWorkspace({
                         onClick={() => void openTranscript(item)}
                       >
                         {isActiveTranscript ? "Viewing" : "View transcript"}
+                      </button>
+                    )}
+                    {confirmRemoveId === item.id ? (
+                      <div className="inline-confirm-group">
+                        <button
+                          type="button"
+                          className="btn small danger-outline"
+                          disabled={removingId === item.id}
+                          onClick={() => void handleRemoveMaterial(item)}
+                        >
+                          {removingId === item.id ? "Removing…" : "Confirm"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn small secondary"
+                          disabled={removingId === item.id}
+                          onClick={() => setConfirmRemoveId(null)}
+                        >
+                          Keep
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn small danger-outline"
+                        onClick={() => setConfirmRemoveId(item.id)}
+                      >
+                        Remove
                       </button>
                     )}
                   </div>

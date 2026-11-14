@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from django.db import transaction
 
+from ai.budget import budget_allows_llm, record_llm_usage
 from courses.models import Course
 from exams.models import ExamQuestion
 from exams.service import STOP, WORDS
@@ -116,6 +117,8 @@ def select_ids(value, allowed, limit):
 
 
 def provider_topics(config, topics, chunks, questions):
+    if not budget_allows_llm():
+        raise ProviderError("Configured AI budget limit reached; local topics remain available.")
     key, model, url = config
     offered = {
         index: {**topic, "question_ids": topic["question_ids"][:8]}
@@ -150,7 +153,10 @@ def provider_topics(config, topics, chunks, questions):
             raw = response.read(65537)
         if len(raw) > 65536:
             raise ValueError("Oversized response")
-        content = json.loads(json.loads(raw)["choices"][0]["message"]["content"])
+        parsed_raw = json.loads(raw)
+        course_obj = chunks[0].material.course if chunks else None
+        record_llm_usage("knowledge_graph", model, parsed_raw, course=course_obj)
+        content = json.loads(parsed_raw["choices"][0]["message"]["content"])
         if not isinstance(content, dict) or set(content) != {"topics"}:
             raise ValueError("Invalid response shape")
         rows = content["topics"]

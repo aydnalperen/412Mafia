@@ -7,6 +7,7 @@ import { FlashcardsWorkspace } from "@/components/course/flashcards-workspace";
 import { KnowledgeWorkspace } from "@/components/course/knowledge-workspace";
 import { MaterialsWorkspace } from "@/components/course/materials-workspace";
 import { OralWorkspace } from "@/components/course/oral-workspace";
+import { ProfessorWorkspace } from "@/components/course/professor-workspace";
 import { QuestionsWorkspace } from "@/components/course/questions-workspace";
 import {
   apiErrorMessage,
@@ -14,11 +15,13 @@ import {
   flashcardsApi,
   knowledgeApi,
   materialsApi,
+  professorApi,
   questionsApi,
   recordingsApi,
   type Course,
   type KnowledgeGraph,
   type Material,
+  type ProfessorDashboard,
   type Question,
   type TranscriptSegment,
   type TranscriptionJob,
@@ -35,7 +38,8 @@ type CourseTab =
   | "materials"
   | "questions"
   | "oral"
-  | "flashcards";
+  | "flashcards"
+  | "professor";
 
 const VALID_TABS: CourseTab[] = [
   "overview",
@@ -44,6 +48,7 @@ const VALID_TABS: CourseTab[] = [
   "questions",
   "oral",
   "flashcards",
+  "professor",
 ];
 
 function isValidTab(value: string | null): value is CourseTab {
@@ -83,6 +88,10 @@ export default function CoursePage({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
   const [flashcardsCount, setFlashcardsCount] = useState(0);
+  const [professorData, setProfessorData] = useState<ProfessorDashboard | null>(
+    null
+  );
+  const [feedbackCount, setFeedbackCount] = useState(0);
   const [transcriptPreview, setTranscriptPreview] = useState<{
     materialId: string | number;
     fileName: string;
@@ -150,6 +159,7 @@ export default function CoursePage({
           questionList,
           graphData,
           flashcardList,
+          profDashboard,
         ] = await Promise.all([
           coursesApi.get(id),
           materialsApi.list(id),
@@ -157,6 +167,7 @@ export default function CoursePage({
           questionsApi.list(id),
           knowledgeApi.get(id),
           flashcardsApi.list(id),
+          professorApi.dashboard(id).catch(() => null),
         ]);
         setCourse(courseData);
         setMaterials(materialList);
@@ -165,6 +176,10 @@ export default function CoursePage({
         setQuestions(questionList);
         setGraph(graphData);
         setFlashcardsCount(flashcardList.length);
+        setProfessorData(profDashboard);
+        if (profDashboard) {
+          setFeedbackCount(profDashboard.feedback.length);
+        }
 
         const primaryTranscript =
           (latest?.output_material_id
@@ -351,11 +366,76 @@ export default function CoursePage({
                 Flashcards
                 <span className="course-tab-count">{flashcardsCount}</span>
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "professor"}
+                className={`course-tab${activeTab === "professor" ? " active" : ""}`}
+                onClick={() => switchTab("professor")}
+              >
+                Professor &amp; feedback
+                <span className="course-tab-count">{feedbackCount}</span>
+              </button>
             </div>
           </section>
 
           {activeTab === "overview" && (
             <div className="overview-stack">
+              {professorData && (
+                <section className="overview-section" aria-label="Course alignment and instructor guidance">
+                  <div className="card overview-alignment-bar">
+                    <div className="overview-alignment-main">
+                      <div className="question-item-header">
+                        <span className="eyebrow">Teaching alignment &amp; pipeline</span>
+                        <span className="badge teal-badge">
+                          {professorData.summary.questions_with_sources}/{professorData.summary.questions_total} exam questions linked
+                        </span>
+                        {professorData.summary.avg_accuracy !== null && (
+                          <span className="badge status-ready">
+                            Oral avg {professorData.summary.avg_accuracy}/5 acc
+                          </span>
+                        )}
+                        <span className="meta-chip mono">
+                          AI budget ${professorData.ai_budget.spent_usd.toFixed(3)} / ${professorData.ai_budget.budget_usd.toFixed(2)}
+                        </span>
+                      </div>
+                      {professorData.feedback.some((item) => item.is_pinned) ? (
+                        <div className="overview-pinned-feedback">
+                          {professorData.feedback
+                            .filter((item) => item.is_pinned)
+                            .slice(0, 2)
+                            .map((note) => (
+                              <div key={note.id} className="instructor-note-card compact">
+                                <div className="question-item-header">
+                                  <span className="badge kind-badge">Pinned by {note.author_name}</span>
+                                  {note.question_number && (
+                                    <span className="meta-chip">Q{note.question_number}</span>
+                                  )}
+                                  {note.topic_name && (
+                                    <span className="meta-chip">{note.topic_name}</span>
+                                  )}
+                                </div>
+                                <strong>{note.title}</strong>
+                                <p>{note.comment}</p>
+                              </div>
+                            ))}
+                        </div>
+                      ) : (
+                        <p className="note" style={{ margin: "6px 0 0" }}>
+                          Audit topic-to-exam alignment, recurring oral practice gaps, and leave instructor feedback notes.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn small secondary"
+                      onClick={() => switchTab("professor")}
+                    >
+                      Open Professor &amp; feedback
+                    </button>
+                  </div>
+                </section>
+              )}
               <section
                 className="overview-section"
                 aria-label="Knowledge graph visualization"
@@ -686,6 +766,19 @@ export default function CoursePage({
               onOpenKnowledge={() => switchTab("knowledge")}
               onOpenOral={() => switchTab("oral")}
               onCardsChanged={(items) => setFlashcardsCount(items.length)}
+            />
+          )}
+
+          {activeTab === "professor" && (
+            <ProfessorWorkspace
+              courseId={id}
+              onOpenQuestions={(questionId) =>
+                switchTab("questions", { questionId })
+              }
+              onOpenKnowledge={() => switchTab("knowledge")}
+              onOpenMaterials={() => switchTab("materials")}
+              onOpenOral={() => switchTab("oral")}
+              onFeedbackCountChanged={(count) => setFeedbackCount(count)}
             />
           )}
         </>

@@ -5,8 +5,11 @@ import { FormattedSourceText } from "@/components/formatted-source";
 import {
   apiErrorMessage,
   oralApi,
+  professorApi,
   questionsApi,
   type OralSession,
+  type OralSessionSummary,
+  type ProfessorFeedbackItem,
   type Question,
 } from "@/lib/api";
 import {
@@ -46,6 +49,12 @@ export function OralWorkspace({
   const [sourceCounts, setSourceCounts] = useState<
     Record<string | number, number>
   >({});
+  const [recentSessions, setRecentSessions] = useState<OralSessionSummary[]>(
+    []
+  );
+  const [feedbackNotes, setFeedbackNotes] = useState<ProfessorFeedbackItem[]>(
+    []
+  );
   const [needsAnalysisQuestion, setNeedsAnalysisQuestion] =
     useState<Question | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -65,10 +74,14 @@ export function OralWorkspace({
             return null;
           })
         : Promise.resolve(null),
+      oralApi.list(courseId).catch(() => [] as OralSessionSummary[]),
+      professorApi.listFeedback(courseId).catch(() => [] as ProfessorFeedbackItem[]),
     ])
-      .then(([items, saved]) => {
+      .then(([items, saved, history, notes]) => {
         if (!active) return;
         setQuestions(items);
+        setRecentSessions(history);
+        setFeedbackNotes(notes);
         if (saved && String(saved.course_id) === courseId) setSession(saved);
         else if (saved) localStorage.removeItem(sessionKey(courseId));
         if (items.length > 0) {
@@ -99,6 +112,25 @@ export function OralWorkspace({
       active = false;
     };
   }, [courseId]);
+
+  const openExistingSession = async (sessionId: number) => {
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const loaded = await oralApi.get(sessionId);
+      localStorage.setItem(sessionKey(courseId), String(loaded.id));
+      const matched =
+        questions.find((q) => Number(q.id) === Number(loaded.question_id)) ?? null;
+      setSelected(matched);
+      setSession(loaded);
+      setAnswer("");
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const beginOralSession = async (question: Question) => {
     const s = await oralApi.start(courseId, {
@@ -416,6 +448,59 @@ export function OralWorkspace({
                 );
               })}
             </ul>
+
+            {recentSessions.length > 0 && (
+              <section className="card" style={{ marginTop: 22 }} aria-label="Previous oral sessions">
+                <div className="section-header" style={{ marginBottom: 12 }}>
+                  <div className="section-title-group">
+                    <h2>Saved oral sessions</h2>
+                    <span className="count-pill">{recentSessions.length}</span>
+                  </div>
+                </div>
+                <ul className="overview-list">
+                  {recentSessions.slice(0, 6).map((item) => (
+                    <li key={item.id} className="overview-list-item">
+                      <div className="overview-list-main">
+                        <div className="question-item-header">
+                          <span className="question-num-badge tabular">
+                            Q{item.question_number}
+                          </span>
+                          <span
+                            className={`badge ${
+                              item.status === "completed" ? "status-ready" : "status-active"
+                            }`}
+                          >
+                            <span className="badge-dot" aria-hidden="true" />
+                            {item.status}
+                          </span>
+                          <span className="meta-chip tabular">
+                            {item.turns_count}/{MAX_TURNS} turns
+                          </span>
+                          {item.avg_accuracy !== null && (
+                            <span className="score-pill">
+                              avg {item.avg_accuracy}/5 acc · {item.avg_completeness}/5 comp
+                            </span>
+                          )}
+                        </div>
+                        <div className="overview-list-title">
+                          {item.question_text.length > 130
+                            ? `${item.question_text.slice(0, 130)}…`
+                            : item.question_text}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn small secondary"
+                        disabled={submitting}
+                        onClick={() => void openExistingSession(item.id)}
+                      >
+                        {item.status === "completed" ? "View report" : "Resume"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </>
         )}
       </>
@@ -656,6 +741,31 @@ export function OralWorkspace({
         </div>
 
         <aside className="oral-history-pane" aria-label="Turn history">
+          {feedbackNotes.some(
+            (n) =>
+              n.question_id === Number(session.question_id) ||
+              (n.is_pinned && n.question_id == null)
+          ) && (
+            <div className="instructor-notes-stack" aria-label="Instructor guidance">
+              {feedbackNotes
+                .filter(
+                  (n) =>
+                    n.question_id === Number(session.question_id) ||
+                    (n.is_pinned && n.question_id == null)
+                )
+                .map((note) => (
+                  <div key={note.id} className="instructor-note-card">
+                    <div className="question-item-header">
+                      <span className="badge teal-badge">Instructor Note</span>
+                      <span className="meta-chip">{note.author_name}</span>
+                    </div>
+                    <strong>{note.title}</strong>
+                    <p>{note.comment}</p>
+                  </div>
+                ))}
+            </div>
+          )}
+
           <div className="section-header" style={{ marginBottom: 0 }}>
             <div className="section-title-group">
               <h2>Turn history &amp; feedback</h2>

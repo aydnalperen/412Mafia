@@ -7,6 +7,7 @@ from urllib import request
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
+from ai.budget import budget_allows_llm, record_llm_usage
 from exams.service import WORDS, tokens
 from knowledge.service import openrouter_config, phrases, serialize_source, source_chunks
 
@@ -200,7 +201,7 @@ def cloze_fields(chunk, target):
 
 def synthesize_with_openrouter(target_list, focus_title=None):
     config = openrouter_config()
-    if config is None or not target_list:
+    if config is None or not target_list or not budget_allows_llm():
         return None
     key, model, url = config
     chunks_by_id = {}
@@ -253,7 +254,10 @@ def synthesize_with_openrouter(target_list, focus_title=None):
             raw = response.read(65537)
         if len(raw) > 65536:
             raise ValueError("Oversized response")
-        content = json.loads(json.loads(raw)["choices"][0]["message"]["content"])
+        parsed_raw = json.loads(raw)
+        first_chunk = next(iter(chunks_by_id.values()), None)
+        record_llm_usage("flashcards", model, parsed_raw, course=first_chunk.material.course if first_chunk else None)
+        content = json.loads(parsed_raw["choices"][0]["message"]["content"])
         if not isinstance(content, dict) or set(content) != {"cards"}:
             raise ValueError("Invalid response shape")
         rows = content["cards"]

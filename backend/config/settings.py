@@ -18,6 +18,8 @@ INSTALLED_APPS = [
     "knowledge",
     "flashcards",
     "transcription",
+    "ai",
+    "professor",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

@@ -137,6 +137,10 @@ export const materialsApi = {
   },
   transcript: (materialId: string | number): Promise<TranscriptSegment[]> =>
     request(`${API_BASE}/api/materials/${encodeURIComponent(String(materialId))}/transcript/`),
+  remove: (courseId: string | number, materialId: string | number): Promise<void> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/materials/${encodeURIComponent(String(materialId))}/`, {
+      method: "DELETE",
+    }),
 };
 
 export type Question = {
@@ -161,9 +165,20 @@ export type QuestionSource = {
   method: string;
 };
 
+export type CreateQuestionInput = {
+  question_number?: string;
+  text: string;
+  page_number?: number | null;
+};
+
 export const questionsApi = {
   list: (courseId: string | number): Promise<Question[]> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/questions/`),
+  create: (courseId: string | number, body: CreateQuestionInput): Promise<Question> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/questions/`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   sources: (questionId: string | number): Promise<QuestionSource[]> =>
     request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`),
   analyzeSources: (questionId: string | number): Promise<QuestionSource[]> =>
@@ -273,7 +288,23 @@ export type OralAnswerInput = {
   expected_turn: number;
 };
 
+export type OralSessionSummary = {
+  id: number;
+  course_id: number;
+  question_id: number;
+  question_number: string;
+  question_text: string;
+  status: "active" | "completed";
+  turns_count: number;
+  avg_accuracy: number | null;
+  avg_completeness: number | null;
+  missing_concepts: string[];
+  started_at: string;
+};
+
 export const oralApi = {
+  list: (courseId: string | number): Promise<OralSessionSummary[]> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/oral/`),
   start: (courseId: string | number, body: OralStartInput): Promise<OralSession> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/oral/start/`, {
       method: "POST",
@@ -315,5 +346,173 @@ export const flashcardsApi = {
     request<Flashcard>(`${flashcardsUrl(courseId)}${cardId}/`, {
       method: "PATCH",
       body: JSON.stringify({ review_state: rating }),
+    }),
+};
+
+export type ProfessorFeedbackCategory =
+  | "rubric_note"
+  | "emphasis"
+  | "clarification"
+  | "coverage_gap";
+
+export type ProfessorFeedbackItem = {
+  id: number;
+  course_id: number;
+  topic_id: number | null;
+  topic_name: string | null;
+  question_id: number | null;
+  question_number: string | null;
+  author_name: string;
+  category: ProfessorFeedbackCategory;
+  title: string;
+  comment: string;
+  is_pinned: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TopicAlignment = {
+  topic_id: number;
+  name: string;
+  description: string;
+  slide_chunks: number;
+  transcript_chunks: number;
+  study_chunks: number;
+  linked_question_count: number;
+  linked_questions: { id: number; question_number: string }[];
+  oral_weakness_hits: number;
+  alignment_status: "well_aligned" | "exam_heavy_gap" | "taught_untested";
+};
+
+export type QuestionCoverage = {
+  question_id: number;
+  question_number: string;
+  text: string;
+  page_number: number | null;
+  material_title: string;
+  source_count: number;
+  has_slides: boolean;
+  has_transcript: boolean;
+  has_study: boolean;
+  top_score: number;
+  coverage_status: "supported" | "partial" | "uncovered";
+  feedback_count: number;
+};
+
+export type RecurringWeakness = {
+  concept: string;
+  occurrences: number;
+  question_ids: number[];
+  question_numbers: string[];
+  chunk_ids: number[];
+  revision_sources: OralRevisionSource[];
+};
+
+export type PipelineStage = {
+  key: string;
+  label: string;
+  status: "ready" | "active" | "partial" | "pending";
+  detail: string;
+};
+
+export type AIBudgetSummary = {
+  spent_usd: number;
+  course_spent_usd: number;
+  budget_usd: number;
+  remaining_usd: number;
+  stt_calls: number;
+  llm_calls: number;
+  budget_exceeded: boolean;
+};
+
+export type ProfessorDashboard = {
+  openrouter_available: boolean;
+  summary: {
+    materials_total: number;
+    materials_ready: number;
+    slides_count: number;
+    transcripts_count: number;
+    exams_count: number;
+    study_count: number;
+    chunks_count: number;
+    topics_count: number;
+    questions_total: number;
+    questions_with_sources: number;
+    questions_uncovered: number;
+    oral_sessions_total: number;
+    oral_sessions_completed: number;
+    oral_turns_count: number;
+    avg_accuracy: number | null;
+    avg_completeness: number | null;
+    flashcards_total: number;
+    flashcards_known: number;
+    flashcards_review_again: number;
+    feedback_count: number;
+  };
+  topic_alignment: TopicAlignment[];
+  question_coverage: QuestionCoverage[];
+  recurring_weaknesses: RecurringWeakness[];
+  pipeline: PipelineStage[];
+  ai_budget: AIBudgetSummary;
+  feedback: ProfessorFeedbackItem[];
+};
+
+export type ProfessorTeachingBriefing = {
+  executive_summary: string;
+  teaching_priorities: {
+    title: string;
+    rationale: string;
+    cited_topic_ids: number[];
+    cited_question_ids: number[];
+  }[];
+  ai_budget: AIBudgetSummary;
+};
+
+export const professorApi = {
+  dashboard: (courseId: string | number): Promise<ProfessorDashboard> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/`),
+  listFeedback: (courseId: string | number): Promise<ProfessorFeedbackItem[]> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/feedback/`),
+  createFeedback: (
+    courseId: string | number,
+    body: {
+      author_name?: string;
+      category: ProfessorFeedbackCategory;
+      title: string;
+      comment: string;
+      topic_id?: number | null;
+      question_id?: number | null;
+      is_pinned?: boolean;
+    },
+  ): Promise<ProfessorFeedbackItem> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/feedback/`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateFeedback: (
+    courseId: string | number,
+    feedbackId: number,
+    body: Partial<{
+      category: ProfessorFeedbackCategory;
+      title: string;
+      comment: string;
+      is_pinned: boolean;
+    }>,
+  ): Promise<ProfessorFeedbackItem> =>
+    request(
+      `${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/feedback/${feedbackId}/`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    ),
+  deleteFeedback: (courseId: string | number, feedbackId: number): Promise<void> =>
+    request(
+      `${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/feedback/${feedbackId}/`,
+      { method: "DELETE" },
+    ),
+  generateInsights: (courseId: string | number): Promise<ProfessorTeachingBriefing> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/professor/insights/`, {
+      method: "POST",
     }),
 };
