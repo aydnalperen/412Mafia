@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "courses",
     "materials",
     "exams",
+    "transcription",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

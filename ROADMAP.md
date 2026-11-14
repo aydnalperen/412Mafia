@@ -1,5 +1,7 @@
 # LectureGraph — Hackathon MVP Roadmap (v2: Video Transcription + Multi-Agent Architecture)
 
+> **Priority update:** MP4 video / MP3 audio → Whisper transcription is now the **primary P0 ingestion path**, implemented before question matching or oral exams. Uploaded TXT/SRT/VTT transcripts remain a fallback. References below that call video ingestion “optional P1” describe the original plan and are superseded by this update. Video frames are not analyzed; timestamps are shown only when returned by the STT provider.
+
 > **Mission:** Turn uploaded lecture videos OR existing transcripts, lecture slides, and past exam questions into a connected, evidence-based study experience that helps students prepare for written and oral exams.
 >
 > **Core differentiator:** Students can navigate **exam question → relevant lecture transcript excerpt → relevant slide/page → adaptive oral exam → targeted revision cards**.

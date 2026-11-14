@@ -65,7 +65,33 @@ export const coursesApi = {
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(id))}/`),
 };
 
-export type MaterialKind = "transcript" | "slides" | "exam" | "study";
+export type TranscriptionStatus =
+  | "queued"
+  | "extracting_audio"
+  | "transcribing"
+  | "indexing"
+  | "ready"
+  | "failed";
+
+export type TranscriptionJob = {
+  id: string | number;
+  status: TranscriptionStatus;
+  error: string | null;
+  progress: number;
+  source_material_id: string | number | null;
+  output_material_id: string | number | null;
+  created_at: string;
+};
+
+export type TranscriptSegment = {
+  id: string | number;
+  text: string;
+  sequence: number;
+  start_seconds: number | null;
+  end_seconds: number | null;
+};
+
+export type MaterialKind = "transcript" | "slides" | "exam" | "study" | "recording";
 
 export type Material = {
   id: string | number;
@@ -78,7 +104,7 @@ export type Material = {
 
 export type UploadMaterialInput = {
   file: File;
-  kind: MaterialKind;
+  kind: Exclude<MaterialKind, "recording">;
 };
 
 export function apiErrorMessage(err: unknown): string {
@@ -104,4 +130,21 @@ export const materialsApi = {
       body: form,
     });
   },
+  transcript: (materialId: string | number): Promise<TranscriptSegment[]> =>
+    request(`${API_BASE}/api/materials/${encodeURIComponent(String(materialId))}/transcript/`),
+};
+
+export const recordingsApi = {
+  list: (courseId: string | number): Promise<TranscriptionJob[]> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/recordings/`),
+  upload: (courseId: string | number, file: File): Promise<TranscriptionJob> => {
+    const form = new FormData();
+    form.append("file", file);
+    return request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/recordings/`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  job: (id: string | number): Promise<TranscriptionJob> =>
+    request(`${API_BASE}/api/transcription-jobs/${encodeURIComponent(String(id))}/`),
 };

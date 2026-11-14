@@ -8,6 +8,7 @@ class Material(models.Model):
         SLIDES = "slides", "Slides"
         EXAM = "exam", "Past exam"
         STUDY = "study", "Study material"
+        RECORDING = "recording", "Lecture recording"
 
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
