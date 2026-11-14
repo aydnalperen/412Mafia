@@ -91,6 +91,29 @@ class OralExamTests(TestCase):
         self.assertEqual(self.client.get(f"/api/oral/{session_id}/").json()["status"], "active")
         self.assertEqual(self.client.get(f"/api/oral/{session_id}/report/").status_code, 400)
 
+    def test_empty_citations_strip_ungrounded_bullets_and_long_points_truncate(self):
+        self.link()
+        session_id = self.start_session().json()["id"]
+        path = f"/api/oral/{session_id}/answer/"
+        with patch("exams.oral.request.urlopen", return_value=self.provider(ids=[])):
+            res = self.client.post(path, data={"answer": "I dont know", "expected_turn": 0},
+                                   content_type="application/json")
+        self.assertEqual(res.status_code, 200)
+        turn = res.json()["turns"][0]
+        self.assertEqual(turn["feedback"]["correct_points"], [])
+        self.assertEqual(turn["feedback"]["missing_points"], [])
+        long_point = "A " * 130 + "end"
+        long_payload = BytesIO(json.dumps({"choices": [{"message": {"content": json.dumps({
+            "feedback": {"accuracy": 2, "completeness": 2, "correct_points": [long_point],
+                         "missing_points": [], "source_chunk_ids": [self.chunk.pk]},
+            "next_action": "follow_up", "next_question": "Next?",
+        })}}]}).encode())
+        with patch("exams.oral.request.urlopen", return_value=long_payload):
+            res = self.client.post(path, data={"answer": "Sampling rate", "expected_turn": 1},
+                                   content_type="application/json")
+        self.assertEqual(res.status_code, 200)
+        self.assertLessEqual(len(res.json()["turns"][1]["feedback"]["correct_points"][0]), 220)
+
     def test_deleted_evidence_is_not_cited(self):
         self.link()
         session_id = self.start_session().json()["id"]
