@@ -8,8 +8,10 @@ import re
 from collections import Counter
 from pathlib import Path
 from urllib import request
+from urllib.error import HTTPError
 
 from django.db import transaction
+from rest_framework.exceptions import APIException
 
 from materials.models import Material, SourceChunk
 
@@ -24,6 +26,12 @@ STOP = set("a an and are as at be by can do does for from how in is of on or the
            "please point points should such than that their them there these this those through use used using well will would you your "
            "ve veya bir bu şu için ile nasıl nedir hangi olarak olur olan da de mi mı mu mü".split())
 logger = logging.getLogger(__name__)
+
+
+class SourceProviderError(APIException):
+    status_code = 502
+    default_code = "source_provider_error"
+    default_detail = "OpenRouter matching failed; saved sources were not changed. Check the backend model and account guardrails."
 
 
 def tokens(text):
@@ -61,7 +69,7 @@ def extract_questions(material):
 
 
 def rerank_with_openrouter(question, candidates):
-    """Only accept citations to the supplied same-course candidates; otherwise use lexical results."""
+    """Only accept citations to the supplied same-course candidates."""
     key = os.environ.get("OPENROUTER_API_KEY")
     model = os.environ.get("OPENROUTER_FAST_MODEL")
     if not key or not model or not candidates:
@@ -89,8 +97,7 @@ def rerank_with_openrouter(question, candidates):
     }
     url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/") + "/chat/completions"
     if not url.startswith("https://"):
-        logger.warning("OpenRouter URL must use HTTPS; using keyword matches")
-        return None
+        raise SourceProviderError("OpenRouter URL must use HTTPS; saved sources were not changed.")
     try:
         req = request.Request(url, data=json.dumps(payload).encode(), headers={
             "Authorization": f"Bearer {key}", "Content-Type": "application/json",
@@ -112,9 +119,14 @@ def rerank_with_openrouter(question, candidates):
             seen.add(chunk_id)
             ranked.append((float(score), by_id[chunk_id], reason.strip()))
         return sorted(ranked, key=lambda item: -item[0])
+    except HTTPError as exc:
+        logger.warning("OpenRouter matching rejected request (HTTP %s)", exc.code)
+        raise SourceProviderError(
+            f"OpenRouter returned HTTP {exc.code}; saved sources were not changed. Check model availability and account guardrails."
+        ) from exc
     except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
-        logger.warning("OpenRouter matching unavailable (%s); using keyword matches", type(exc).__name__)
-        return None
+        logger.warning("OpenRouter matching failed (%s)", type(exc).__name__)
+        raise SourceProviderError() from exc
 
 
 def sources_for(question):

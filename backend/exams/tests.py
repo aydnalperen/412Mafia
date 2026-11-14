@@ -2,6 +2,7 @@ import json
 import tempfile
 from io import BytesIO
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -145,9 +146,15 @@ class QuestionEvidenceTests(TestCase):
             self.assertEqual(QuestionSourceLink.objects.get().method, "openrouter")
             with patch("exams.service.request.urlopen", return_value=reply([
                 {"chunk_id": alien.pk, "score": 0.95, "reason": "Wrong course"}])):
-                fallback = self.client.post(path).json()
-                self.assertEqual(fallback[0]["method"], "keyword-idf")
-                self.assertEqual(QuestionSourceLink.objects.get().method, "keyword-idf")
+                self.assertEqual(self.client.post(path).status_code, 502)
+                self.assertEqual(self.client.get(path).json(), result)
+            with patch("exams.service.request.urlopen", side_effect=HTTPError(
+                "https://example.test", 404, "No eligible endpoint", {}, BytesIO()
+            )):
+                response = self.client.post(path)
+                self.assertEqual(response.status_code, 502)
+                self.assertIn("guardrails", response.json()["error"]["message"])
+                self.assertEqual(self.client.get(path).json(), result)
             with patch("exams.service.request.urlopen", return_value=reply([])):
                 self.assertEqual(self.client.post(path).json(), [])
                 self.assertFalse(QuestionSourceLink.objects.exists())
