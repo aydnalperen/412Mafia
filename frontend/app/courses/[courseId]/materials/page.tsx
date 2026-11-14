@@ -109,7 +109,7 @@ export default function MaterialsPage({ params }: { params: { courseId: string }
         <button className="btn" disabled={!recording || uploading} type="submit">
           {uploading ? "Uploading…" : "Generate transcript"}
         </button>
-        <p className="note">Processing requires the separate transcription worker. No video frames are analyzed.</p>
+        <p className="note">Your upload is transcribed in the background. No video frames are analyzed.</p>
         {job && <div className="card" role="status">
           <strong>Transcription: {job.status.replaceAll("_", " ")} ({job.progress}%)</strong>
           {job.status === "failed" && <p className="error">{job.error}</p>}
@@ -143,7 +143,7 @@ export default function MaterialsPage({ params }: { params: { courseId: string }
           <strong>{item.file_name}</strong> — {item.kind} ({item.status})
           {item.status === "failed" && item.error && <p className="error">{item.error}</p>}
         </li>)}
-      </ul> : <p className="empty">No materials yet.</p>}
+      </ul> : <p className="empty">No materials yet. Upload your recording, slides and past exam above to get started.</p>}
     </main>
   );
 }
