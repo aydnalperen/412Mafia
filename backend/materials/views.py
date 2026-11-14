@@ -24,4 +24,7 @@ class CourseMaterialsView(APIView):
         serializer = UploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         material, created = ingest_upload(course, serializer.validated_data["kind"], serializer.validated_data["file"])
+        if material.kind == Material.Kind.EXAM and material.status == Material.Status.READY:
+            from exams.service import extract_questions
+            extract_questions(material)
         return Response(MaterialSerializer(material).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

@@ -99,6 +99,7 @@ export default function MaterialsPage({ params }: { params: { courseId: string }
   return (
     <main className="page container">
       <a href={`/courses/${id}`}>Back to course</a>
+      <a href={`/courses/${id}/questions`} className="btn secondary small">Exam questions and sources</a>
       <h1>Materials</h1>
       {error && <p role="alert" className="error">{error}</p>}
       <form className="form" onSubmit={uploadRecording}>

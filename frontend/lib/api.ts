@@ -134,6 +134,35 @@ export const materialsApi = {
     request(`${API_BASE}/api/materials/${encodeURIComponent(String(materialId))}/transcript/`),
 };
 
+export type Question = {
+  id: string | number;
+  question_number: string;
+  text: string;
+  page_number: number | null;
+  material_id: string | number;
+  material_title: string;
+};
+
+export type QuestionSource = {
+  chunk_id: string | number;
+  text: string;
+  material_title: string;
+  material_kind: MaterialKind;
+  page_number: number | null;
+  start_seconds: number | null;
+  end_seconds: number | null;
+  score: number;
+  reason: string;
+  method: string;
+};
+
+export const questionsApi = {
+  list: (courseId: string | number): Promise<Question[]> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/questions/`),
+  sources: (questionId: string | number): Promise<QuestionSource[]> =>
+    request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`),
+};
+
 export const recordingsApi = {
   list: (courseId: string | number): Promise<TranscriptionJob[]> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/recordings/`),

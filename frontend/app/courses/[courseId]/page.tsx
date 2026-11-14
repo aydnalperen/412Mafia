@@ -75,6 +75,9 @@ export default function CoursePage({
       <a href={`/courses/${course.id}/materials`} className="btn">
         Upload video, slides and past exams
       </a>
+      <a href={`/courses/${course.id}/questions`} className="btn secondary">
+        Exam questions and sources
+      </a>
       <p className="note">Choose your own files on the next page; no course materials are preloaded.</p>
     </main>
   );

@@ -26,7 +26,7 @@ class RecordingTests(TestCase):
         self.course = Course.objects.create(name="Signals")
         self.url = f"/api/courses/{self.course.pk}/recordings/"
         env = patch.dict(os.environ, {
-            "OPENROUTER_API_KEY": "fake-test-key", "OPENROUTER_STT_MODEL": "openai/whisper-large-v3",
+            "OPENAI_API_KEY": "fake-test-key",
             "AI_BUDGET_USD": "8", "STT_ESTIMATED_USD_PER_SECOND": "0.00005",
         })
         env.start()
@@ -48,7 +48,7 @@ class RecordingTests(TestCase):
     def test_rejects_wrong_format_and_missing_credentials(self):
         self.assertEqual(self.upload("video.mp4", b"ID3audio").status_code, 400)
         self.assertEqual(self.upload("not-a-recording.txt").status_code, 400)
-        with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
             self.assertEqual(self.upload().status_code, 400)
         self.assertEqual(Material.objects.count(), 0)
 
@@ -70,22 +70,34 @@ class RecordingTests(TestCase):
         self.assertEqual((timed[0].start_seconds, timed[0].end_seconds), (181.2, 182.3))
         untimed = normalize_response({"text": "Hello"}, 180, 180)
         self.assertIsNone(untimed[0].start_seconds)
+        overshoot = normalize_response({"segments": [
+            {"text": "Valid", "start": 1, "end": 2},
+            {"text": "Provider overshoot", "start": 179.44, "end": 181.32},
+        ]}, 180, 180)
+        self.assertEqual((overshoot[0].start_seconds, overshoot[0].end_seconds), (181, 182))
+        self.assertEqual(overshoot[1].text, "Provider overshoot")
+        self.assertIsNone(overshoot[1].start_seconds)
+        self.assertIsNone(overshoot[1].end_seconds)
         with self.assertRaisesRegex(TranscriptionError, "timestamps"):
             normalize_response({"segments": [{"text": "Bad", "start": -1, "end": 2}]}, 180, 180)
 
-    def test_openrouter_uses_audio_endpoint_and_requests_segment_timestamps(self):
+    def test_openai_uses_multipart_whisper_with_segment_timestamps(self):
         response = MagicMock()
         response.read.return_value = b'{"text":"Real transcription"}'
         response.__enter__.return_value = response
         with patch("transcription.service.urlopen", return_value=response) as call:
             self.assertEqual(transcribe_audio(b"audio")["text"], "Real transcription")
         request = call.call_args.args[0]
-        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/audio/transcriptions")
-        payload = json.loads(request.data)
-        self.assertEqual(payload["model"], "openai/whisper-large-v3")
-        self.assertEqual(payload["response_format"], "verbose_json")
-        self.assertEqual(payload["timestamp_granularities"], ["segment"])
-        self.assertEqual(payload["input_audio"]["format"], "mp3")
+        self.assertEqual(request.full_url, "https://api.openai.com/v1/audio/transcriptions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer fake-test-key")
+        content_type = request.get_header("Content-type")
+        boundary = content_type.split("boundary=", 1)[1].encode()
+        self.assertTrue(request.data.endswith(b"--" + boundary + b"--\r\n"))
+        for field in (b'name="model"\r\n\r\nwhisper-1\r\n',
+                      b'name="response_format"\r\n\r\nverbose_json\r\n',
+                      b'name="timestamp_granularities[]"\r\n\r\nsegment\r\n',
+                      b'name="file"; filename="segment.mp3"\r\nContent-Type: audio/mpeg\r\n\r\naudio\r\n'):
+            self.assertIn(field, request.data)
 
     @patch("transcription.service.transcribe_audio")
     @patch("transcription.service.extract_audio")
@@ -128,7 +140,7 @@ class RecordingTests(TestCase):
         self.assertIn("Second part", job.output_material.chunks.first().text)
         self.assertEqual(AIUsageEvent.objects.filter(job=job).count(), 2)
 
-    @patch("transcription.service.transcribe_audio", side_effect=TranscriptionError("OpenRouter timed out"))
+    @patch("transcription.service.transcribe_audio", side_effect=TranscriptionError("OpenAI timed out"))
     @patch("transcription.service.extract_audio")
     @patch("transcription.service.probe_recording", return_value=4)
     def test_failure_is_visible_and_retry_reuses_job(self, probe, extract, transcribe):

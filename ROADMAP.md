@@ -1,6 +1,6 @@
 # LectureGraph — Hackathon MVP Roadmap (v2: Video Transcription + Multi-Agent Architecture)
 
-> **Priority update:** MP4 video / MP3 audio → Whisper transcription is now the **primary P0 ingestion path**, implemented before question matching or oral exams. Uploaded TXT/SRT/VTT transcripts remain a fallback. References below that call video ingestion “optional P1” describe the original plan and are superseded by this update. Video frames are not analyzed; timestamps are shown only when returned by the STT provider.
+> **Priority update:** MP4 video / MP3 audio → Whisper transcription is now the **primary P0 ingestion path**, implemented before question matching or oral exams. Uploaded TXT/SRT/VTT transcripts remain a fallback. References below that call video ingestion “optional P1” describe the original plan and are superseded by this update. Video frames are not analyzed; timestamps are shown only when returned by the STT provider. **Implementation update:** STT now uses OpenAI's `whisper-1` API and `OPENAI_API_KEY`; OpenRouter remains for other LLM calls. Older OpenRouter STT prompts and price examples below are superseded.
 
 > **Mission:** Turn uploaded lecture videos OR existing transcripts, lecture slides, and past exam questions into a connected, evidence-based study experience that helps students prepare for written and oral exams.
 >
@@ -16,7 +16,7 @@ Use this file as the project specification and implementation checklist.
 
 1. Build a **working, end-to-end vertical slice** before adding secondary features.
 2. Prioritize **P0** tasks; do not spend time on P1/P2 until the core user journey works.
-3. Support optional **video-to-transcript extraction via audio-only FFmpeg + OpenRouter STT** in **Phase B2 (P1)**. Do **not** analyze video frames, implement frame-accurate slide synchronization, or add real-time voice calling, microservices, Kubernetes, or a graph database.
+3. Support **video-to-transcript extraction via audio-only FFmpeg + OpenAI Whisper** in Phase B2. Do **not** analyze video frames, implement frame-accurate slide synchronization, or add real-time voice calling, microservices, Kubernetes, or a graph database.
 4. Keep OpenRouter secrets and all AI calls **server-side** in Django.
 5. Preserve provenance: every match, explanation, and evaluated answer must link to real uploaded source chunks. **Never fabricate source references.**
 6. Prefer small, maintainable modules over abstractions. Add tests for each critical pipeline stage.
@@ -134,7 +134,7 @@ lecturegraph/
     ├── config/
     ├── courses/
     ├── materials/
-    ├── transcription/                # P1: media extraction, OpenRouter STT
+    ├── transcription/                # media extraction, OpenAI Whisper STT
     ├── orchestration/                # P1: bounded workflow state and roles
     ├── knowledge/
     ├── exams/
@@ -223,13 +223,13 @@ Implement with Django models and migrations. Actual names may vary but keep thes
 2. Validate the container and stream metadata using `ffprobe`; reject corrupt files and recordings over configured duration/size limits. Avoid path traversal, unsafe shell expansion, and public raw-file URLs.
 3. For video input, use `ffmpeg` to extract **mono speech audio**, e.g. 16 kHz compressed MP3 or compatible WAV. For audio input, normalize only when necessary. Never send raw video frames to an LLM.
 4. Split long audio into independently processable segments (e.g. **2–5 minutes**) to respect model/provider timeouts and upload limits. For overlap, compute absolute timestamps and deduplicate repeated edge text; do not concatenate without offset correction.
-5. POST the audio segments to `https://openrouter.ai/api/v1/audio/transcriptions` using `OPENROUTER_API_KEY`; prefer a model/route that supports `response_format=verbose_json` and **segment-level timestamps**. Example candidate: `openai/whisper-large-v3` (verify its current availability, price, timestamp behavior, and provider constraints when coding). A plain-text-only model is acceptable only with explicitly **unavailable** timestamps, never inferred/fabricated times.
+5. POST the audio segments to `https://api.openai.com/v1/audio/transcriptions` using `OPENAI_API_KEY`, `whisper-1`, `response_format=verbose_json` and **segment-level timestamps**. A plain-text-only response is acceptable only with explicitly **unavailable** timestamps, never inferred/fabricated times.
 6. Normalize provider responses to the internal segment schema: `{text, start_seconds, end_seconds, language?, provider?, model?}`. Shift timestamps by each segment's audio offset; keep exact media-to-transcript lineage. Export SRT/VTT if needed.
 7. Create one derived `Material(kind=TRANSCRIPT)` containing the processed transcript and feed its segments into the **existing chunking, retrieval, topic mapping, and oral exam** code. Build a reusable `create_transcript_from_segments` service so manually uploaded SRT/VTT and generated STT follow one path.
 8. Track states (`queued → extracting_audio → transcribing → indexing → ready`, with `failed`), cost/usage, retries, idempotency and cancellation (if practical). Preserve partial STT output safely, but do not mark the transcript ready until validated/indexed.
 9. Add test fixtures for mismatched codecs, no audio stream, model timeout, malformed timestamps, overlapping segments, job retry, duplicate submission and budget exhaustion. Delete temporary audio after processing; expose configurable retention for original video.
 
-**OpenRouter reference:** <https://openrouter.ai/docs/guides/overview/multimodal/stt> and <https://openrouter.ai/blog/tutorials/transcription-on-openrouter/>. Per-provider support for `verbose_json`, timestamp granularity and formats varies. OpenRouter's November 2026 listed price for Whisper Large V3 was approximately `$0.000008/second` (about `$0.0288` for one hour of audio), **not** including LLM/embedding calls or infrastructure. Never hardcode this rate as a billing guarantee.
+**OpenAI STT reference:** <https://platform.openai.com/docs/api-reference/audio/createTranscription>. Verify current `whisper-1` pricing and access in the OpenAI account; the software budget is an estimate, not a provider-side billing limit.
 
 ### 6.7 Bounded multi-agent workflow (P1 architecture, minimal interfaces from P0)
 
@@ -332,11 +332,11 @@ Implementation notes:
 ```dotenv
 # backend/.env.example — copy to backend/.env and set real secrets locally
 OPENROUTER_API_KEY=
+OPENAI_API_KEY=
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_FAST_MODEL=
 OPENROUTER_EXAM_MODEL=
 OPENROUTER_EMBEDDING_MODEL=
-OPENROUTER_STT_MODEL=openai/whisper-large-v3
 # P1: local FFmpeg and upload guards
 FFMPEG_BIN=ffmpeg
 FFPROBE_BIN=ffprobe
@@ -494,6 +494,6 @@ Work through these prompts sequentially rather than asking one agent to build ev
 
 ## 17. Video + Multi-Agent Delivery Priority
 
-**Decision:** Video-to-transcript is **included in the product roadmap** but **must not block** the validated transcript-first demo. Prefer implementing Phase B2 in parallel after Phase A establishes the shared `Material`/`SourceChunk` contract. OpenRouter handles STT and LLM calls using the same account; transcription is a separate API request, not a chat prompt. Agent roles consume trusted normalized transcript text—not raw video—to minimize cost and context size.
+**Decision:** Video-to-transcript is **included in the product roadmap** but **must not block** the validated transcript-first demo. Prefer implementing Phase B2 in parallel after Phase A establishes the shared `Material`/`SourceChunk` contract. OpenAI handles only Whisper STT; OpenRouter remains for LLM calls. Transcription is a separate API request, not a chat prompt. Agent roles consume trusted normalized transcript text—not raw video—to minimize cost and context size.
 
 **Recommended next Codex instruction:** `Implement Phase A, including a stable transcript-segment interface and material lineage. Keep the Phase B2 contract in mind, but do not spend core-path time on video upload until transcript ingestion works. Assign video STT to a separate worker/agent when parallelism is available.`

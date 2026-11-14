@@ -1,6 +1,5 @@
 """Bounded recording -> audio -> Whisper -> existing transcript chunks."""
 
-import base64
 import hashlib
 import json
 import logging
@@ -8,10 +7,10 @@ import math
 import os
 import subprocess
 import tempfile
+import uuid
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from django.core.files.base import ContentFile
@@ -30,6 +29,7 @@ from .models import AIUsageEvent, TranscriptionJob
 
 logger = logging.getLogger(__name__)
 SEGMENT_SECONDS = 180
+WHISPER_MODEL = "whisper-1"
 
 
 class TranscriptionError(Exception):
@@ -66,13 +66,13 @@ def submit_recording(course, uploaded):
         valid = data.startswith(b"ID3") or (len(data) >= 2 and data[0] == 0xff and data[1] & 0xe0 == 0xe0)
     if not valid:
         raise ValidationError({"file": "Recording content does not match its MP4/MP3 extension."})
-    if not os.environ.get("OPENROUTER_API_KEY") or not os.environ.get("OPENROUTER_STT_MODEL"):
-        raise ValidationError({"file": "Configure OpenRouter STT on the backend before uploading recordings."})
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise ValidationError({"file": "Configure OPENAI_API_KEY on the backend before uploading recordings."})
     digest = hashlib.sha256(data).hexdigest()
     source = Material.objects.filter(course=course, kind=Material.Kind.RECORDING, file_hash=digest).first()
     if source is None:
         source = Material.objects.create(course=course, kind=Material.Kind.RECORDING, file=ContentFile(data, name=name), file_hash=digest)
-    model = os.environ["OPENROUTER_STT_MODEL"]
+    model = WHISPER_MODEL
     job, created = TranscriptionJob.objects.get_or_create(course=course, source_material=source, model=model)
     if not created and job.status == TranscriptionJob.Status.FAILED:
         job.status, job.error, job.progress, job.completed_at = TranscriptionJob.Status.QUEUED, "", 0, None
@@ -131,9 +131,13 @@ def normalize_response(payload, offset, seconds):
             if (isinstance(start, bool) or isinstance(end, bool) or
                     not isinstance(start, (int, float)) or not isinstance(end, (int, float)) or
                     not math.isfinite(start) or not math.isfinite(end) or
-                    start < previous_start or start < 0 or end <= start or end > seconds + 1):
+                    start < previous_start or start < 0 or end <= start):
                 raise TranscriptionError("Invalid provider timestamps; transcript not indexed.")
-            result.append(TranscriptSegment(item["text"].strip(), offset + start, offset + end))
+            # Whisper can report a segment ending past the extracted audio: keep its text, not a false citation time.
+            if start >= seconds or end > seconds:
+                result.append(TranscriptSegment(item["text"].strip()))
+            else:
+                result.append(TranscriptSegment(item["text"].strip(), offset + start, offset + end))
             previous_start = start
         return result
     text = payload.get("text")
@@ -144,28 +148,29 @@ def normalize_response(payload, offset, seconds):
 
 
 def transcribe_audio(audio):
-    base = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-    parsed = urlparse(base)
-    if parsed.scheme != "https" or parsed.hostname != "openrouter.ai" or parsed.path != "/api/v1":
-        raise TranscriptionError("Invalid OpenRouter endpoint configuration.")
-    data = json.dumps({
-        "model": os.environ["OPENROUTER_STT_MODEL"],
-        "input_audio": {"data": base64.b64encode(audio).decode("ascii"), "format": "mp3"},
-        "response_format": "verbose_json", "timestamp_granularities": ["segment"],
-    }).encode()
-    request = Request(base + "/audio/transcriptions", data=data, headers={
-        "Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"], "Content-Type": "application/json",
+    boundary = uuid.uuid4().hex
+    data = b"".join(
+        b"--" + boundary.encode() + b"\r\nContent-Disposition: form-data; name=\"" + name +
+        b"\"\r\n\r\n" + value + b"\r\n"
+        for name, value in ((b"model", WHISPER_MODEL.encode()), (b"response_format", b"verbose_json"),
+                            (b"timestamp_granularities[]", b"segment"))
+    ) + (b"--" + boundary.encode() + b"\r\nContent-Disposition: form-data; name=\"file\"; "
+         b"filename=\"segment.mp3\"\r\nContent-Type: audio/mpeg\r\n\r\n" + audio +
+         b"\r\n--" + boundary.encode() + b"--\r\n")
+    request = Request("https://api.openai.com/v1/audio/transcriptions", data=data, headers={
+        "Authorization": "Bearer " + os.environ["OPENAI_API_KEY"],
+        "Content-Type": "multipart/form-data; boundary=" + boundary,
     })
     try:
         with urlopen(request, timeout=75) as response:
             body = response.read(1024 * 1024 + 1)
             if len(body) > 1024 * 1024:
-                raise TranscriptionError("OpenRouter transcription response is too large.")
+                raise TranscriptionError("OpenAI transcription response is too large.")
             return json.loads(body)
     except HTTPError as exc:
-        raise TranscriptionError(f"OpenRouter transcription failed (HTTP {exc.code}); check model and timestamp support.") from exc
+        raise TranscriptionError(f"OpenAI transcription failed (HTTP {exc.code}); check API key, billing, and Whisper access.") from exc
     except (URLError, TimeoutError, OSError, ValueError) as exc:
-        raise TranscriptionError("OpenRouter transcription timed out or returned invalid JSON.") from exc
+        raise TranscriptionError("OpenAI transcription timed out or returned invalid JSON.") from exc
 
 
 def process_job(job):
