@@ -285,6 +285,10 @@ export default function OralPage({
                     <li key={i}>{c}</li>
                   ))}
                 </ul>
+                <a className="btn secondary small"
+                  href={`/courses/${id}/flashcards?oralSession=${encodeURIComponent(String(session.id))}`}>
+                  Practice missed concepts
+                </a>
               </>
             )}
             {session.report.revision_sources.length > 0 && (

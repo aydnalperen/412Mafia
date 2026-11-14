@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     "materials",
     "exams",
     "knowledge",
+    "flashcards",
     "transcription",
 ]
 MIDDLEWARE = [

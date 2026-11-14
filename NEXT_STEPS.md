@@ -10,6 +10,8 @@ Bu belge mevcut koddan devam edecek geliştirici/ajan içindir. `README.md` ve i
 - Soru–kaynak eşleştirmesi ve konu grafı sitedeki ayrı yeniden analiz butonlarıyla çalıştırılabiliyor; sonuçları görüntülemek ücretli OpenRouter çağrısı başlatmıyor. Soru eşleştirmesinde sağlayıcı hatası mevcut anahtar kelime sonuçlarına döner.
 - `exams/` içinde soruya dayalı, en fazla üç turlu metin sözlü sınavı ve kaynaklı rapor var. Oturum ve yanıtlar saklanıyor; site yenilendiğinde oturum geri yükleniyor. Başlamak için önceden analiz edilmiş gerçek soru kaynakları ve backend OpenRouter yapılandırması gerekiyor. Geçersiz kaynak ID'si veya sağlayıcı hatası yanıtı kaydetmiyor; ücretli çağrılar yalnızca yanıt gönderilirken yapılıyor. Bu akışın canlı sağlayıcıyla uçtan uca doğrulaması henüz yapılmadı.
 
+- Dersin **Flashcards** ekranında kaynaklı konulardan veya tamamlanan sözlü sınavın kaynakla eşleşen eksik kavramlarından boşluk doldurma kartları üretiliyor. Yanıt açma ve Known / Review Again durumu mevcut.
+
 ## 1. Öncelik: P0 uçtan uca doğrulama
 
 - İzinli gerçek materyalle ders → kayıt/transkript → slayt/sınav → kaynak eşleştirmesi → konu grafı → sözlü sınav → rapor akışını yerel PostgreSQL ve çalışan worker üzerinde doğrula. Özellikle Whisper/OpenRouter erişimini, gerçek zaman damgalarını, kaynak bağlantılarını ve sağlayıcı hatalarını kontrol et. Ücretli çağrılar veya gerçek materyali sağlayıcıya gönderme için önceden izin al; testlerde HTTP'yi mock'la.
@@ -18,7 +20,7 @@ Bu belge mevcut koddan devam edecek geliştirici/ajan içindir. `README.md` ve i
 
 ## 2. P0 sonrasında isteğe bağlı
 
-- P1: gerçek kaynaklara bağlı flashcard üretimi ve Known / Review Again durumu; yalnızca ihtiyaç çıkarsa sınırlı rol orkestrasyonu. Kayıt transkripsiyonu ve temel konu gezintisi zaten mevcut; yeniden inşa etme.
+- P1: yalnızca ihtiyaç çıkarsa sınırlı rol orkestrasyonu.
 - P2/üretim: kimlik doğrulama ve güvenli barındırma, ölçekli worker/depolama, OCR, sesli sınav ve öğretim üyesi paneli. Yerel demo için bunlar önkoşul değil.
 
 ## Çalışma ve güvenlik sınırı

@@ -54,8 +54,8 @@ A university student uploading their own permitted course materials and studying
 
 - [ ] Upload a short lecture video or audio clip and generate a **timestamped transcript**, using the existing transcript ingestion pipeline afterward (Phase B2).
 - [ ] Add bounded role-based orchestration for transcription → indexing → concept mapping → examiner → revision (Section 6.6).
-- [ ] Generate source-grounded flashcards from topics or oral-exam weaknesses.
-- [ ] Allow flashcard reveal and a simple Known / Review Again state.
+- [x] Generate source-grounded flashcards from topics or oral-exam weaknesses.
+- [x] Allow flashcard reveal and a simple Known / Review Again state.
 - [ ] Show topic-level navigation across materials.
 
 ### P2 — Stretch goals / post-hackathon
@@ -317,6 +317,7 @@ Use `/api/` as the common prefix. Return JSON and consistent validation errors.
 | `GET` | `/api/oral/{sessionId}/report/` | Final report with citation IDs |
 | `POST` | `/api/courses/{id}/flashcards/generate/` | Generate cards (P1) |
 | `GET` | `/api/courses/{id}/flashcards/` | List cards (P1) |
+| `PATCH` | `/api/courses/{id}/flashcards/{cardId}/` | Save Known or Review Again (P1) |
 
 Implementation notes:
 

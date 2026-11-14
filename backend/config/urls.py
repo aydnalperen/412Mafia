@@ -4,6 +4,7 @@ from rest_framework.routers import SimpleRouter
 from courses.views import CourseViewSet
 from exams.views import QuestionsView, QuestionSourcesView
 from exams.oral_views import OralAnswerView, OralReportView, OralSessionView, OralStartView
+from flashcards.views import FlashcardReviewView, FlashcardsView, GenerateFlashcardsView
 from knowledge.views import GenerateKnowledgeView, KnowledgeView
 from materials.views import CourseMaterialsView
 from transcription.views import JobView, RecordingsView, TranscriptView
@@ -12,6 +13,9 @@ router = SimpleRouter()
 router.register("courses", CourseViewSet, basename="course")
 
 urlpatterns = [
+    path("api/courses/<int:course_id>/flashcards/", FlashcardsView.as_view(), name="course-flashcards"),
+    path("api/courses/<int:course_id>/flashcards/generate/", GenerateFlashcardsView.as_view(), name="generate-flashcards"),
+    path("api/courses/<int:course_id>/flashcards/<int:card_id>/", FlashcardReviewView.as_view(), name="review-flashcard"),
     path("api/courses/<int:course_id>/oral/start/", OralStartView.as_view(), name="oral-start"),
     path("api/oral/<int:session_id>/", OralSessionView.as_view(), name="oral-session"),
     path("api/oral/<int:session_id>/answer/", OralAnswerView.as_view(), name="oral-answer"),

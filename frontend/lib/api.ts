@@ -165,6 +165,16 @@ export const questionsApi = {
     request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`, { method: "POST" }),
 };
 
+type CourseSource = {
+  chunk_id: number;
+  material_id: number;
+  file_name: string;
+  page_number: number | null;
+  is_slide: boolean;
+  start_seconds: number | null;
+  end_seconds: number | null;
+};
+
 export type KnowledgeGraph = {
   openrouter_available: boolean;
   topics: {
@@ -172,16 +182,7 @@ export type KnowledgeGraph = {
     name: string;
     description: string;
     question_ids: number[];
-    sources: {
-      chunk_id: number;
-      material_id: number;
-      file_name: string;
-      text: string;
-      page_number: number | null;
-      is_slide: boolean;
-      start_seconds: number | null;
-      end_seconds: number | null;
-    }[];
+    sources: (CourseSource & { text: string })[];
   }[];
 };
 
@@ -274,5 +275,35 @@ export const oralApi = {
     request(`${API_BASE}/api/oral/${encodeURIComponent(String(sessionId))}/answer/`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+};
+
+export type FlashcardRating = "known" | "review_again";
+
+export type Flashcard = {
+  id: number;
+  front: string;
+  back: string;
+  source: CourseSource;
+  review_state: "new" | FlashcardRating;
+};
+
+type FlashcardOrigin = { topic_id: number } | { oral_session_id: number };
+
+function flashcardsUrl(courseId: string) {
+  return `${API_BASE}/api/courses/${encodeURIComponent(courseId)}/flashcards/`;
+}
+
+export const flashcardsApi = {
+  list: (courseId: string) => request<Flashcard[]>(flashcardsUrl(courseId)),
+  generate: (courseId: string, origin: FlashcardOrigin) =>
+    request<Flashcard[]>(`${flashcardsUrl(courseId)}generate/`, {
+      method: "POST",
+      body: JSON.stringify(origin),
+    }),
+  review: (courseId: string, cardId: number, rating: FlashcardRating) =>
+    request<Flashcard>(`${flashcardsUrl(courseId)}${cardId}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ review_state: rating }),
     }),
 };

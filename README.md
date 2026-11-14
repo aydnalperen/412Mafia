@@ -69,6 +69,10 @@ If `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` are configured in Django, **
 
 Configure `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` in the **backend**. First analyze sources for a past-exam question on **Exam questions and sources**; only questions with saved, ready, same-course evidence can start an exam. On **Oral exam**, choose the question and answer up to three text prompts. Each answer sends the question, up to three actual source excerpts, recent answers and your answer to OpenRouter; this can incur a charge. Responses are checked for valid same-course source IDs. Invalid/provider responses return an error without saving the answer, so it can be retried. Sessions and feedback persist in Django; the browser remembers the session ID for refresh. The final formative report links revision excerpts to real sources and shows page/timestamps only when present. AI feedback is not an official grade or verified factual assessment; review the cited originals. There is no offline/fake grading fallback, topic-only exam, voice mode or hard USD budget accounting in this demo. Keep provider-side spending limits in place.
 
+### Flashcards
+
+Open **Flashcards** from a course and choose a topic from its knowledge graph. You can also open **Practice missed concepts** on a completed oral exam report. Generation runs locally and creates up to five fill-in-the-blank cards from matching phrases in saved course sources. Each card shows its source file and any available page, slide or timestamp. Reveal the answer and mark it **Known** or **Review Again**. Your rating survives a refresh and regenerating the same card. An oral exam weakness needs matching wording in its cited sources to produce a card.
+
 ## Checks
 
 With backend dependencies installed, run `DB_ENGINE=sqlite .venv/bin/python manage.py test` and `DB_ENGINE=sqlite .venv/bin/python manage.py check`. The SQLite switch is only for local automated tests; normal runs require PostgreSQL environment variables. From `frontend/`, run `npm run typecheck` and `npm run build`.
