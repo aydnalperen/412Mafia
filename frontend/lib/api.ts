@@ -212,3 +212,67 @@ export const recordingsApi = {
   job: (id: string | number): Promise<TranscriptionJob> =>
     request(`${API_BASE}/api/transcription-jobs/${encodeURIComponent(String(id))}/`),
 };
+
+export type OralTurnFeedback = {
+  accuracy: number;
+  completeness: number;
+  correct_points: string[];
+  missing_points: string[];
+  source_chunk_ids: number[];
+};
+
+export type OralTurn = {
+  question: string;
+  answer: string;
+  feedback: OralTurnFeedback | null;
+};
+
+export type OralRevisionSource = {
+  chunk_id: number;
+  text: string;
+  material_title: string;
+  page_number: number | null;
+  start_seconds: number | null;
+  end_seconds: number | null;
+};
+
+export type OralReport = {
+  strengths: string[];
+  missing_concepts: string[];
+  revision_sources: OralRevisionSource[];
+};
+
+export type OralSession = {
+  id: string | number;
+  course_id: string | number;
+  question_id: string | number;
+  status: "active" | "completed";
+  current_question: string | null;
+  sources: OralRevisionSource[];
+  turns: OralTurn[];
+  report: OralReport | null;
+};
+
+export type OralStartInput = {
+  question_id: number;
+};
+
+export type OralAnswerInput = {
+  answer: string;
+  expected_turn: number;
+};
+
+export const oralApi = {
+  start: (courseId: string | number, body: OralStartInput): Promise<OralSession> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/oral/start/`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  get: (sessionId: string | number): Promise<OralSession> =>
+    request(`${API_BASE}/api/oral/${encodeURIComponent(String(sessionId))}/`),
+  answer: (sessionId: string | number, body: OralAnswerInput): Promise<OralSession> =>
+    request(`${API_BASE}/api/oral/${encodeURIComponent(String(sessionId))}/answer/`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};

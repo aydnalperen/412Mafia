@@ -1,6 +1,6 @@
 # LectureGraph (recording-first local demo)
 
-Local-only, single-user scaffold. Create a course, upload an **MP4 video or MP3 audio recording**, and generate a transcript using OpenAI's Whisper API. The video **audio track only** is extracted with FFmpeg; no video frames are interpreted or slide synchronization claimed. You can also upload slide/exam files or a manual transcript as a fallback. Numbered past-exam questions can be linked to actual transcript/slide/study chunks; oral exams are **not implemented yet**. Do not expose this unauthenticated demo on a public network.
+Local-only, single-user scaffold. Create a course, upload an **MP4 video or MP3 audio recording**, and generate a transcript using OpenAI's Whisper API. The video **audio track only** is extracted with FFmpeg; no video frames are interpreted or slide synchronization claimed. You can also upload slide/exam files or a manual transcript as a fallback. Numbered past-exam questions can be linked to actual transcript/slide/study chunks and used for a text oral exam. Do not expose this unauthenticated demo on a public network.
 
 ## Setup
 
@@ -65,6 +65,10 @@ Open **Knowledge graph** from a course and select **Generate topics locally**. T
 
 If `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` are configured in Django, **Re-analyze topics with OpenRouter** lets OpenRouter select from the local candidates. This sends limited excerpts to the provider and may incur a charge. Opening the graph reads saved results. Provider failures preserve the last saved graph.
 
+### Text oral exam
+
+Configure `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` in the **backend**. First analyze sources for a past-exam question on **Exam questions and sources**; only questions with saved, ready, same-course evidence can start an exam. On **Oral exam**, choose the question and answer up to three text prompts. Each answer sends the question, up to three actual source excerpts, recent answers and your answer to OpenRouter; this can incur a charge. Responses are checked for valid same-course source IDs. Invalid/provider responses return an error without saving the answer, so it can be retried. Sessions and feedback persist in Django; the browser remembers the session ID for refresh. The final formative report links revision excerpts to real sources and shows page/timestamps only when present. AI feedback is not an official grade or verified factual assessment; review the cited originals. There is no offline/fake grading fallback, topic-only exam, voice mode or hard USD budget accounting in this demo. Keep provider-side spending limits in place.
+
 ## Checks
 
 With backend dependencies installed, run `DB_ENGINE=sqlite .venv/bin/python manage.py test` and `DB_ENGINE=sqlite .venv/bin/python manage.py check`. The SQLite switch is only for local automated tests; normal runs require PostgreSQL environment variables. From `frontend/`, run `npm run typecheck` and `npm run build`.
@@ -72,5 +76,5 @@ With backend dependencies installed, run `DB_ENGINE=sqlite .venv/bin/python mana
 ## Current boundaries
 
 - API requests must originate from loopback; browser writes are allowed only from local port 3000. No user authentication or public uploads exist. Do not deploy, tunnel, or place a publicly reachable reverse proxy in front of this version: the proxy could make external visitors appear to be local.
-- `Material`, `SourceChunk`, `ExamQuestion` and `QuestionSourceLink` have migrations. `materials.segments.create_transcript_chunks` accepts real timed/untimed segments, shared by manual uploads and STT; it does not invent timestamps. Question and source APIs return only real course material; no LLM citation IDs are accepted.
+- `Material`, `SourceChunk`, `ExamQuestion`, `QuestionSourceLink`, `OralSession` and `OralTurn` have migrations. `materials.segments.create_transcript_chunks` accepts real timed/untimed segments, shared by manual uploads and STT; it does not invent timestamps. Question and source APIs return only real course material; no unverified LLM citation IDs are accepted.
 - Keep `OPENAI_API_KEY` and `OPENROUTER_API_KEY` only in the backend environment; automated tests make no paid provider requests. OpenAI Whisper access, timestamp support and billing require confirmation with a short authorized clip and a provider-side spending limit. FFmpeg must be installed separately. Do not run multiple workers simultaneously in this local demo.

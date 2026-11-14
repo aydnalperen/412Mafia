@@ -240,6 +240,12 @@ export default function CoursePage({
         >
           <span className="action-tile-inner">Knowledge graph</span>
         </a>
+        <a
+          href={`/courses/${course.id}/oral`}
+          className="btn secondary action-tile"
+        >
+          <span className="action-tile-inner">Oral exam</span>
+        </a>
       </div>
 
       <div className="callout-info">
