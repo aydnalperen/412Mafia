@@ -1,276 +1,680 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { coursesApi, type Course } from "@/lib/api";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { TopicGraph } from "@/app/courses/[courseId]/knowledge/topic-graph";
+import { FlashcardsWorkspace } from "@/components/course/flashcards-workspace";
+import { KnowledgeWorkspace } from "@/components/course/knowledge-workspace";
+import { MaterialsWorkspace } from "@/components/course/materials-workspace";
+import { OralWorkspace } from "@/components/course/oral-workspace";
+import { QuestionsWorkspace } from "@/components/course/questions-workspace";
+import {
+  apiErrorMessage,
+  coursesApi,
+  knowledgeApi,
+  materialsApi,
+  questionsApi,
+  recordingsApi,
+  type Course,
+  type KnowledgeGraph,
+  type Material,
+  type Question,
+  type TranscriptSegment,
+  type TranscriptionJob,
+} from "@/lib/api";
+import {
+  formatTimestampRange,
+  formatTranscriptParagraphs,
+  splitQuestionTitleAndBody,
+} from "@/lib/format";
+
+type CourseTab =
+  | "overview"
+  | "knowledge"
+  | "materials"
+  | "questions"
+  | "oral"
+  | "flashcards";
+
+const VALID_TABS: CourseTab[] = [
+  "overview",
+  "knowledge",
+  "materials",
+  "questions",
+  "oral",
+  "flashcards",
+];
+
+function isValidTab(value: string | null): value is CourseTab {
+  return value !== null && VALID_TABS.includes(value as CourseTab);
+}
+
+function isJobActive(job: TranscriptionJob | null): boolean {
+  return (
+    job !== null &&
+    (job.status === "queued" ||
+      job.status === "extracting_audio" ||
+      job.status === "transcribing" ||
+      job.status === "indexing")
+  );
+}
 
 export default function CoursePage({
   params,
 }: {
-  params: { courseId: string | string[] };
+  params: { courseId: string };
 }) {
-  const id = Array.isArray(params.courseId)
-    ? params.courseId[0]
-    : params.courseId;
+  const id = params.courseId;
+  const [activeTab, setActiveTab] = useState<CourseTab>("overview");
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<
+    string | number | null
+  >(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<
+    string | number | null
+  >(null);
+  const [selectedOralSessionId, setSelectedOralSessionId] = useState<
+    number | null
+  >(null);
 
   const [course, setCourse] = useState<Course | null>(null);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [latestJob, setLatestJob] = useState<TranscriptionJob | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
+  const [transcriptPreview, setTranscriptPreview] = useState<{
+    materialId: string | number;
+    fileName: string;
+    segments: TranscriptSegment[];
+  } | null>(null);
+  const [generatingGraph, setGeneratingGraph] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    coursesApi
-      .get(id)
-      .then(setCourse)
-      .catch((err) => {
+    if (typeof window === "undefined") return;
+    const paramsFromUrl = new URLSearchParams(window.location.search);
+    const requestedTab = paramsFromUrl.get("tab");
+    if (isValidTab(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+    const rawSession = Number(paramsFromUrl.get("oralSession"));
+    if (Number.isSafeInteger(rawSession) && rawSession > 0) {
+      setSelectedOralSessionId(rawSession);
+    }
+  }, []);
+
+  const switchTab = useCallback(
+    (
+      nextTab: CourseTab,
+      options?: {
+        transcriptMaterialId?: string | number | null;
+        questionId?: string | number | null;
+        oralSessionId?: number | null;
+      }
+    ) => {
+      if (options?.transcriptMaterialId !== undefined) {
+        setSelectedTranscriptId(options.transcriptMaterialId);
+      }
+      if (options?.questionId !== undefined) {
+        setSelectedQuestionId(options.questionId);
+      }
+      if (options?.oralSessionId !== undefined) {
+        setSelectedOralSessionId(options.oralSessionId);
+      }
+      setActiveTab(nextTab);
+      if (typeof window !== "undefined") {
+        const nextUrl =
+          nextTab === "overview"
+            ? `/courses/${id}`
+            : `/courses/${id}?tab=${nextTab}`;
+        window.history.replaceState(null, "", nextUrl);
+      }
+    },
+    [id]
+  );
+
+  const refreshCourseOverview = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const [courseData, materialList, jobList, questionList, graphData] =
+          await Promise.all([
+            coursesApi.get(id),
+            materialsApi.list(id),
+            recordingsApi.list(id),
+            questionsApi.list(id),
+            knowledgeApi.get(id),
+          ]);
+        setCourse(courseData);
+        setMaterials(materialList);
+        const latest = jobList[0] ?? null;
+        setLatestJob(latest);
+        setQuestions(questionList);
+        setGraph(graphData);
+
+        const primaryTranscript =
+          (latest?.output_material_id
+            ? materialList.find((item) => item.id === latest.output_material_id)
+            : undefined) ??
+          materialList.find((item) => item.kind === "transcript");
+
+        if (primaryTranscript) {
+          try {
+            const segments = await materialsApi.transcript(primaryTranscript.id);
+            setTranscriptPreview({
+              materialId: primaryTranscript.id,
+              fileName: primaryTranscript.file_name,
+              segments,
+            });
+          } catch {
+            setTranscriptPreview(null);
+          }
+        } else {
+          setTranscriptPreview(null);
+        }
+      } catch (err) {
         setError(err);
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [id]
+  );
 
-  if (loading) {
-    return (
-      <main className="page container">
-        <div className="page-header">
-          <span className="eyebrow">Course</span>
-          <h1>Course</h1>
-        </div>
-        <div className="loading">
-          <span className="spinner" aria-hidden="true" />
-          <span>Loading course…</span>
-        </div>
-      </main>
-    );
+  useEffect(() => {
+    void refreshCourseOverview();
+  }, [refreshCourseOverview]);
+
+  async function handleGenerateGraph(mode: "local" | "openrouter") {
+    setGeneratingGraph(true);
+    setGraphError(null);
+    try {
+      const next = await knowledgeApi.generate(id, mode);
+      setGraph(next);
+    } catch (err) {
+      setGraphError(apiErrorMessage(err));
+    } finally {
+      setGeneratingGraph(false);
+    }
   }
 
-  if (error) {
-    return (
-      <main className="page container">
-        <div className="page-nav">
-          <a href="/courses" className="back-link">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            <span>All courses</span>
-          </a>
-        </div>
-        <div className="page-header">
-          <span className="eyebrow">Course</span>
-          <h1>Course</h1>
-        </div>
-        <div className="error" role="alert">
-          <span>
-            Failed to load course:{" "}
-            {error instanceof Error ? error.message : String(error)}
-          </span>
-        </div>
-      </main>
-    );
-  }
-
-  if (!course) {
-    return (
-      <main className="page container">
-        <div className="page-nav">
-          <a href="/courses" className="back-link">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            <span>All courses</span>
-          </a>
-        </div>
-        <div className="page-header">
-          <span className="eyebrow">Course</span>
-          <h1>Course</h1>
-        </div>
-        <div className="empty">Course not found.</div>
-      </main>
-    );
-  }
+  const topics = graph?.topics ?? [];
+  const openRouterAvailable = graph?.openrouter_available ?? false;
+  const readyMaterialsCount = materials.filter(
+    (item) => item.status === "ready"
+  ).length;
+  const transcriptCount = materials.filter(
+    (item) => item.kind === "transcript"
+  ).length;
+  const firstSegmentRange = transcriptPreview?.segments[0]
+    ? formatTimestampRange(
+        transcriptPreview.segments[0].start_seconds,
+        transcriptPreview.segments[0].end_seconds
+      )
+    : null;
+  const transcriptParagraphs = transcriptPreview
+    ? formatTranscriptParagraphs(
+        transcriptPreview.segments.map((segment) => segment.text).join("\n\n")
+      )
+    : [];
 
   return (
     <main className="page container">
-      <div className="page-nav">
-        <a href="/courses" className="back-link">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-          <span>All courses</span>
-        </a>
-      </div>
+      <nav className="page-nav">
+        <Link href="/courses" className="btn secondary small">
+          &larr; All courses
+        </Link>
+      </nav>
 
-      <div className="card course-hero-card">
-        <div className="course-hero-meta">
-          <span className="meta-chip mono">Course ID: {course.id}</span>
-          <span className="meta-chip">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            Created {new Date(course.created_at).toLocaleDateString()}
-          </span>
+      {loading && (
+        <div className="loading">
+          <span className="spinner" aria-hidden="true" />
+          <span>Loading course details…</span>
         </div>
+      )}
 
-        <h1>{course.name}</h1>
+      {error ? (
+        <div className="error" role="alert">
+          <span>{apiErrorMessage(error)}</span>
+        </div>
+      ) : null}
 
-        {course.description ? (
-          <p className="course-description">{course.description}</p>
-        ) : (
-          <p className="note">No description.</p>
-        )}
-      </div>
+      {course && (
+        <>
+          <section className="course-cockpit-header">
+            <div className="course-cockpit-top">
+              <div className="course-cockpit-title-block">
+                <p className="eyebrow">Course workspace</p>
+                <h1>{course.name}</h1>
+                {course.description ? (
+                  <p className="course-cockpit-desc">{course.description}</p>
+                ) : (
+                  <p className="course-cockpit-desc">
+                    Visualize how course topics connect to lecture transcripts,
+                    slides, past exam questions, and oral practice sessions.
+                  </p>
+                )}
+              </div>
 
-      <div className="action-grid">
-        <a href={`/courses/${course.id}/materials`} className="btn action-tile">
-          <span className="action-tile-inner">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <span>Upload video, slides and past exams</span>
-          </span>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M5 12h14" />
-            <path d="m12 5 7 7-7 7" />
-          </svg>
-        </a>
+              <div className="course-stats-strip" aria-label="Course summary">
+                <span className="course-stat-pill">
+                  <strong>{topics.length}</strong> topics
+                </span>
+                <span className="course-stat-pill">
+                  <strong>{readyMaterialsCount}</strong>/{materials.length} materials ready
+                </span>
+                <span className="course-stat-pill">
+                  <strong>{transcriptCount}</strong> transcripts
+                </span>
+                <span className="course-stat-pill">
+                  <strong>{questions.length}</strong> exam questions
+                </span>
+              </div>
+            </div>
 
-        <a
-          href={`/courses/${course.id}/questions`}
-          className="btn secondary action-tile"
-        >
-          <span className="action-tile-inner">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            <span>Exam questions and sources</span>
-          </span>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M5 12h14" />
-            <path d="m12 5 7 7-7 7" />
-          </svg>
-        </a>
-        <a
-          href={`/courses/${course.id}/knowledge`}
-          className="btn secondary action-tile"
-        >
-          <span className="action-tile-inner">Knowledge graph</span>
-        </a>
-        <a
-          href={`/courses/${course.id}/oral`}
-          className="btn secondary action-tile"
-        >
-          <span className="action-tile-inner">Oral exam</span>
-        </a>
-        <a href={`/courses/${course.id}/flashcards`} className="btn secondary action-tile">
-          <span className="action-tile-inner">Flashcards</span>
-        </a>
-      </div>
+            <div className="course-tabs" role="tablist" aria-label="Course sections">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "overview"}
+                className={`course-tab${activeTab === "overview" ? " active" : ""}`}
+                onClick={() => {
+                  switchTab("overview");
+                  void refreshCourseOverview({ silent: true });
+                }}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "knowledge"}
+                className={`course-tab${activeTab === "knowledge" ? " active" : ""}`}
+                onClick={() => switchTab("knowledge")}
+              >
+                Knowledge graph
+                <span className="course-tab-count">{topics.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "materials"}
+                className={`course-tab${activeTab === "materials" ? " active" : ""}`}
+                onClick={() => switchTab("materials")}
+              >
+                Materials &amp; transcript
+                <span className="course-tab-count">{materials.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "questions"}
+                className={`course-tab${activeTab === "questions" ? " active" : ""}`}
+                onClick={() => switchTab("questions")}
+              >
+                Exam questions
+                <span className="course-tab-count">{questions.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "oral"}
+                className={`course-tab${activeTab === "oral" ? " active" : ""}`}
+                onClick={() => switchTab("oral")}
+              >
+                Oral exam
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "flashcards"}
+                className={`course-tab${activeTab === "flashcards" ? " active" : ""}`}
+                onClick={() => switchTab("flashcards")}
+              >
+                Flashcards
+              </button>
+            </div>
+          </section>
 
-      <div className="callout-info">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4" />
-          <path d="M12 8h.01" />
-        </svg>
-        <p className="note" style={{ margin: 0 }}>
-          Choose your own files on the next page; no course materials are preloaded.
-        </p>
-      </div>
+          {activeTab === "overview" && (
+            <div className="overview-stack">
+              <section
+                className="overview-section"
+                aria-label="Knowledge graph visualization"
+              >
+                <div className="overview-section-header">
+                  <div>
+                    <p className="eyebrow">Knowledge visualization</p>
+                    <h2>Course knowledge graph</h2>
+                  </div>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="btn secondary small"
+                      disabled={generatingGraph}
+                      onClick={() => void handleGenerateGraph("local")}
+                    >
+                      {generatingGraph
+                        ? "Analyzing…"
+                        : topics.length > 0
+                          ? "Refresh locally"
+                          : "Generate topics locally"}
+                    </button>
+                    {openRouterAvailable ? (
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={generatingGraph}
+                        onClick={() => void handleGenerateGraph("openrouter")}
+                      >
+                        {generatingGraph
+                          ? "Analyzing…"
+                          : topics.length > 0
+                            ? "Re-analyze with OpenRouter"
+                            : "Analyze with OpenRouter"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn secondary small"
+                      onClick={() => switchTab("knowledge")}
+                    >
+                      Topic details
+                    </button>
+                  </div>
+                </div>
+
+                {graphError ? (
+                  <div className="error" role="alert">
+                    <span>{graphError}</span>
+                  </div>
+                ) : null}
+
+                {topics.length > 0 ? (
+                  <TopicGraph topics={topics} questions={questions} />
+                ) : (
+                  <div className="empty">
+                    <strong>No knowledge graph generated yet</strong>
+                    <p className="note">
+                      {materials.length > 0
+                        ? "Your course already has materials indexed. Generate topics to visualize how lecture concepts, slides, and exam questions connect."
+                        : "Upload lecture recordings, transcripts, slides, or past exams first, then generate the knowledge graph."}
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              <div className="overview-split-grid">
+                <section
+                  className="card overview-panel"
+                  aria-label="Course materials and transcript"
+                >
+                  <div className="overview-section-header">
+                    <div>
+                      <p className="eyebrow">Sources &amp; lectures</p>
+                      <h2>Materials &amp; transcript</h2>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn secondary small"
+                      onClick={() => switchTab("materials")}
+                    >
+                      Upload &amp; manage
+                    </button>
+                  </div>
+
+                  {isJobActive(latestJob) && latestJob ? (
+                    <div className="callout-info">
+                      <span>
+                        <strong>Transcription {latestJob.status}:</strong>{" "}
+                        {latestJob.progress}% complete. Open{" "}
+                        <strong>Materials &amp; transcript</strong> to monitor
+                        progress.
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {transcriptPreview && transcriptPreview.segments.length > 0 ? (
+                    <div className="overview-transcript-preview">
+                      <div className="overview-section-header">
+                        <div>
+                          <span className="badge status-ready">Transcript</span>{" "}
+                          <strong>{transcriptPreview.fileName}</strong>
+                          <span className="note" style={{ marginLeft: 8 }}>
+                            {transcriptPreview.segments.length} segments
+                            {firstSegmentRange
+                              ? ` · starts at ${firstSegmentRange}`
+                              : ""}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn secondary small"
+                          onClick={() =>
+                            switchTab("materials", {
+                              transcriptMaterialId: transcriptPreview.materialId,
+                            })
+                          }
+                        >
+                          Read full transcript
+                        </button>
+                      </div>
+                      <div className="overview-transcript-paragraphs">
+                        {transcriptParagraphs.slice(0, 3).map((paragraph, idx) => (
+                          <p key={idx}>{paragraph}</p>
+                        ))}
+                        {transcriptParagraphs.length > 3 ? (
+                          <p className="note">
+                            +{transcriptParagraphs.length - 3} more formatted
+                            paragraphs in full reader…
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {materials.length === 0 ? (
+                    <div className="empty">
+                      <span>
+                        No materials uploaded yet. Open{" "}
+                        <strong>Materials &amp; transcript</strong> to add
+                        recordings, slides, transcripts, or past exams.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="overview-list">
+                      {materials.slice(0, 6).map((material) => (
+                        <div key={material.id} className="overview-list-item">
+                          <div className="overview-list-main">
+                            <div className="overview-list-title">
+                              {material.file_name}
+                            </div>
+                            <div className="actions">
+                              <span className="badge kind-badge">
+                                {material.kind}
+                              </span>
+                              <span className="meta-chip">{material.status}</span>
+                            </div>
+                          </div>
+                          {material.kind === "transcript" ? (
+                            <button
+                              type="button"
+                              className="btn secondary small"
+                              onClick={() =>
+                                switchTab("materials", {
+                                  transcriptMaterialId: material.id,
+                                })
+                              }
+                            >
+                              Read
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                      {materials.length > 6 ? (
+                        <p className="note">
+                          Showing 6 of {materials.length} materials.{" "}
+                          <button
+                            type="button"
+                            className="btn secondary small"
+                            onClick={() => switchTab("materials")}
+                          >
+                            View all
+                          </button>
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
+
+                <section
+                  className="card overview-panel"
+                  aria-label="Exam questions and oral practice"
+                >
+                  <div className="overview-section-header">
+                    <div>
+                      <p className="eyebrow">Assessment</p>
+                      <h2>Exam questions</h2>
+                    </div>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn secondary small"
+                        onClick={() => switchTab("questions")}
+                      >
+                        All questions
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small"
+                        onClick={() => switchTab("oral")}
+                      >
+                        Start oral exam
+                      </button>
+                    </div>
+                  </div>
+
+                  {questions.length === 0 ? (
+                    <div className="empty">
+                      <span>
+                        No exam questions extracted yet. Upload a past exam in{" "}
+                        <strong>Materials &amp; transcript</strong> to extract
+                        sourced questions and unlock oral exam practice.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="overview-list">
+                      {questions.slice(0, 6).map((question) => {
+                        const { title, body } = splitQuestionTitleAndBody(
+                          question.text
+                        );
+                        const headline = title || body;
+                        return (
+                          <div key={question.id} className="overview-list-item">
+                            <div className="overview-list-main">
+                              <div className="overview-list-title">
+                                {question.question_number
+                                  ? `Q${question.question_number}. `
+                                  : ""}
+                                {headline.length > 110
+                                  ? `${headline.slice(0, 110)}…`
+                                  : headline}
+                              </div>
+                              {title && body ? (
+                                <p className="overview-list-snippet">
+                                  {body.length > 140
+                                    ? `${body.slice(0, 140)}…`
+                                    : body}
+                                </p>
+                              ) : null}
+                              <div className="note">
+                                {question.material_title}
+                                {question.page_number !== null
+                                  ? ` · p. ${question.page_number}`
+                                  : ""}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn secondary small"
+                              onClick={() =>
+                                switchTab("questions", { questionId: question.id })
+                              }
+                            >
+                              Sources
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {questions.length > 6 ? (
+                        <p className="note">
+                          Showing 6 of {questions.length} exam questions.
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "knowledge" && (
+            <KnowledgeWorkspace
+              courseId={id}
+              onGraphChanged={(nextGraph) => {
+                setGraph(nextGraph);
+              }}
+            />
+          )}
+
+          {activeTab === "materials" && (
+            <MaterialsWorkspace
+              courseId={id}
+              initialTranscriptMaterialId={selectedTranscriptId}
+              onMaterialsChanged={() => {
+                void refreshCourseOverview({ silent: true });
+              }}
+            />
+          )}
+
+          {activeTab === "questions" && (
+            <QuestionsWorkspace
+              courseId={id}
+              initialQuestionId={selectedQuestionId}
+              onStartOralExam={() => switchTab("oral")}
+              onOpenMaterials={() => switchTab("materials")}
+            />
+          )}
+
+          {activeTab === "oral" && (
+            <OralWorkspace
+              courseId={id}
+              onOpenQuestions={(questionId) =>
+                switchTab("questions", { questionId })
+              }
+              onOpenMaterials={() => switchTab("materials")}
+              onPracticeMissedConcepts={(sessionId) =>
+                switchTab("flashcards", {
+                  oralSessionId: Number(sessionId),
+                })
+              }
+            />
+          )}
+
+          {activeTab === "flashcards" && (
+            <FlashcardsWorkspace
+              courseId={id}
+              oralSession={selectedOralSessionId}
+              onOpenKnowledge={() => switchTab("knowledge")}
+              onOpenOral={() => switchTab("oral")}
+            />
+          )}
+        </>
+      )}
     </main>
   );
 }

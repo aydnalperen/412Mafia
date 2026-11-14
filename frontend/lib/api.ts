@@ -121,13 +121,18 @@ export function apiErrorMessage(err: unknown): string {
 export const materialsApi = {
   list: (courseId: string | number): Promise<Material[]> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/materials/`),
-  upload: (courseId: string | number, input: UploadMaterialInput): Promise<Material> => {
+  upload: (
+    courseId: string | number,
+    input: UploadMaterialInput,
+    signal?: AbortSignal,
+  ): Promise<Material> => {
     const form = new FormData();
     form.append("file", input.file);
     form.append("kind", input.kind);
     return request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/materials/`, {
       method: "POST",
       body: form,
+      signal,
     });
   },
   transcript: (materialId: string | number): Promise<TranscriptSegment[]> =>
@@ -165,7 +170,7 @@ export const questionsApi = {
     request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`, { method: "POST" }),
 };
 
-type CourseSource = {
+export type CourseSource = {
   chunk_id: number;
   material_id: number;
   file_name: string;
@@ -202,12 +207,17 @@ export const knowledgeApi = {
 export const recordingsApi = {
   list: (courseId: string | number): Promise<TranscriptionJob[]> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/recordings/`),
-  upload: (courseId: string | number, file: File): Promise<TranscriptionJob> => {
+  upload: (
+    courseId: string | number,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<TranscriptionJob> => {
     const form = new FormData();
     form.append("file", file);
     return request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/recordings/`, {
       method: "POST",
       body: form,
+      signal,
     });
   },
   job: (id: string | number): Promise<TranscriptionJob> =>
