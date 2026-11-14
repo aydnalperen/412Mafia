@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiErrorMessage, knowledgeApi, questionsApi, type KnowledgeGraph, type Question } from "@/lib/api";
+import { TopicGraph } from "./topic-graph";
 
 export default function KnowledgePage({ params }: { params: { courseId: string } }) {
   const id = params.courseId;
@@ -70,10 +71,13 @@ export default function KnowledgePage({ params }: { params: { courseId: string }
       {loading && <p role="status" className="loading">Loading knowledge graph…</p>}
       {generating && <p role="status" className="loading">Generating topics…</p>}
       {error && <p role="alert" className="error">{error}</p>}
+      {graph && graph.topics.length > 0 && <TopicGraph key={id} topics={graph.topics} questions={questions} />}
       {graph?.topics.length === 0 && !generating && (
         <p className="empty">No sourced topics yet. Add course materials and generate topics.</p>
       )}
-      {graph?.topics.map((topic) => (
+      {graph && graph.topics.length > 0 && <details className="card" style={{ marginTop: 16 }}>
+        <summary>Browse topics as a list</summary>
+      {graph.topics.map((topic) => (
         <section key={topic.id} className="card">
           <h2>{topic.name}</h2>
           {topic.description && <p>{topic.description}</p>}
@@ -109,6 +113,7 @@ export default function KnowledgePage({ params }: { params: { courseId: string }
           </ul>
         </section>
       ))}
+      </details>}
     </main>
   );
 }
