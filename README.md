@@ -4,7 +4,7 @@ Local-only, single-user scaffold. Create a course, upload an **MP4 video or MP3 
 
 ## Setup
 
-Requires Python 3.11+, Node.js 20+, FFmpeg and FFprobe on `PATH`, a locally running PostgreSQL server, and an OpenAI API key with Whisper access and billing enabled. OpenRouter is reserved for future LLM calls.
+Requires Python 3.11+, Node.js 20+, FFmpeg and FFprobe on `PATH`, a locally running PostgreSQL server, and an OpenAI API key with Whisper access and billing enabled. OpenRouter is optional for question/source analysis.
 
 For an already configured local database and `backend/.env`, start both services from the repository root:
 
@@ -29,7 +29,7 @@ The script installs missing dependencies, checks Django, applies pending migrati
    .venv/bin/python -m pip install -r requirements.txt
    cp .env.example .env
     # Edit .env: set POSTGRES_PASSWORD, DJANGO_SECRET_KEY, and OPENAI_API_KEY.
-    # OPENROUTER_API_KEY is separate; only future LLM calls use it.
+    # Optional: set OPENROUTER_API_KEY and OPENROUTER_FAST_MODEL for source reranking.
    set -a; source .env; set +a
    .venv/bin/python manage.py migrate
    .venv/bin/python manage.py runserver 127.0.0.1:8000
@@ -57,7 +57,7 @@ From a course page, open **Materials**. Recording upload is the primary action: 
 
 Other accepted formats: transcripts `.txt`, `.md`, `.srt`, `.vtt`; slides `.pdf`, `.pptx`; exams and study material `.pdf`, `.txt`, `.md`. These uploads are capped at 15 MB. PDF pages and PowerPoint slides keep their true page/slide numbers. Slides must contain selectable text; image-only slides need OCR, and legacy `.ppt` files are unsupported. Original uploads remain in `backend/media/` and are not publicly served. Upload only materials you are allowed to process.
 
-Upload a past exam with numbered questions (`1. …`, `2) …`, `Soru 3: …`) or lettered sections with points (`A. … (10 points)`), then open **Exam questions and sources** from the course page. Questions retain their literal text and originating PDF page (if applicable); lettered sections stop at a `Solution.` heading so answer steps are not extracted as questions. The local keyword/IDF matcher searches only ready transcript, slide and study chunks in the same course and requires multiple shared terms; an unmatched question shows **No reliable match found**. Matching is lexical rather than semantic and can miss paraphrases or yield weak overview slides as candidates: review the original quoted chunk before relying on it. Unsupported/scan-only exam questions are not invented; supply an extractable numbered or lettered document.
+Upload a past exam with numbered questions (`1. …`, `2) …`, `Soru 3: …`) or lettered sections with points (`A. … (10 points)`), then open **Exam questions and sources** from the course page. Questions retain their literal text and originating PDF page (if applicable); lettered sections stop at a `Solution.` heading so answer steps are not extracted as questions. The local keyword/IDF matcher searches only ready transcript, slide and study chunks in the same course and requires multiple shared terms; an unmatched question shows **No reliable match found**. Optionally set `OPENROUTER_API_KEY` and `OPENROUTER_FAST_MODEL` in the backend environment to rerank up to 12 lexical candidates through OpenRouter. Only real candidate chunk IDs can be cited; provider errors or invalid responses fall back to keyword matching. Each source request can incur an OpenRouter charge and sends the question and candidate excerpts to the provider; model scores and explanations are heuristics, so review the original chunk. Lexical candidate retrieval still misses paraphrases. Unsupported/scan-only exam questions are not invented; supply an extractable numbered or lettered document.
 
 ## Checks
 

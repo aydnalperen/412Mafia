@@ -94,7 +94,7 @@ export default function QuestionsPage({
           </p>
         </div>
         <h2>Candidate sources</h2>
-        <p className="note">Keyword matches only; check the cited passage before relying on it.</p>
+        <p className="note">Candidates use keyword matching; when configured, OpenRouter ranks them. Scores are heuristics, not verified probabilities. Check the cited passage before relying on it.</p>
         {error != null && <p role="alert" className="error">Failed to load sources: {apiErrorMessage(error)}</p>}
         {sourceLoading ? (
           <div className="loading">Loading sources…</div>

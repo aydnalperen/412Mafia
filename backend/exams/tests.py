@@ -1,4 +1,7 @@
+import json
 import tempfile
+from io import BytesIO
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -105,3 +108,39 @@ class QuestionEvidenceTests(TestCase):
         self.assertEqual(sources_for(question), [])
         self.assertEqual(QuestionSourceLink.objects.count(), 0)
         self.assertEqual(self.client.get("/api/questions/999999/sources/").status_code, 404)
+
+    def test_openrouter_reranks_only_real_same_course_candidates(self):
+        exam = Material.objects.create(course=self.course, kind=Material.Kind.EXAM, file="materials/exam.txt")
+        question = ExamQuestion.objects.create(course=self.course, material=exam, text="Explain aliasing in sampling")
+        transcript = Material.objects.create(course=self.course, kind=Material.Kind.TRANSCRIPT,
+                                             status=Material.Status.READY, file="materials/lecture.txt")
+        chunk = SourceChunk.objects.create(material=transcript, sequence=0,
+                                           text="Aliasing in sampling produces false frequencies")
+        other = Course.objects.create(name="Other")
+        foreign = Material.objects.create(course=other, kind=Material.Kind.TRANSCRIPT,
+                                          status=Material.Status.READY, file="materials/other.txt")
+        alien = SourceChunk.objects.create(material=foreign, sequence=0, text=chunk.text)
+
+        def reply(matches):
+            return BytesIO(json.dumps({"choices": [{"message": {"content": json.dumps({"matches": matches})}}]}).encode())
+
+        path = f"/api/questions/{question.pk}/sources/"
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key", "OPENROUTER_FAST_MODEL": "test/model"}):
+            with patch("exams.service.request.urlopen", return_value=reply([
+                {"chunk_id": chunk.pk, "score": 0.85, "reason": "Explains aliasing in sampling"}])) as call:
+                result = self.client.get(path).json()
+                self.assertEqual(result[0]["method"], "openrouter")
+                self.assertEqual(result[0]["chunk_id"], chunk.pk)
+                self.assertEqual(result[0]["score"], 0.85)
+                payload = json.loads(call.call_args.args[0].data)
+                self.assertEqual(payload["model"], "test/model")
+                self.assertNotIn(str(alien.pk), payload["messages"][1]["content"])
+            self.assertEqual(QuestionSourceLink.objects.get().method, "openrouter")
+            with patch("exams.service.request.urlopen", return_value=reply([
+                {"chunk_id": alien.pk, "score": 0.95, "reason": "Wrong course"}])):
+                fallback = self.client.get(path).json()
+                self.assertEqual(fallback[0]["method"], "keyword-idf")
+                self.assertEqual(QuestionSourceLink.objects.get().method, "keyword-idf")
+            with patch("exams.service.request.urlopen", return_value=reply([])):
+                self.assertEqual(self.client.get(path).json(), [])
+                self.assertFalse(QuestionSourceLink.objects.exists())
