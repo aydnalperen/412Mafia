@@ -173,7 +173,7 @@ export function QuestionsWorkspace({
             <div className="section-header" style={{ marginBottom: 12 }}>
               <div className="section-title-group">
                 <h2>Candidate sources</h2>
-                {sources !== null && !sourceLoading && !error && (
+                {sources !== null && !sourceLoading && (
                   <span className="count-pill">{sources.length}</span>
                 )}
               </div>
@@ -231,7 +231,7 @@ export function QuestionsWorkspace({
 
             {error != null && (
               <p role="alert" className="error">
-                Failed to load sources: {apiErrorMessage(error)}
+                Source analysis failed: {apiErrorMessage(error)}
               </p>
             )}
 
@@ -240,7 +240,7 @@ export function QuestionsWorkspace({
                 <span className="spinner" aria-hidden="true" />
                 <span>Loading sources…</span>
               </div>
-            ) : !!error ? null : sources === null ? (
+            ) : sources === null ? (
               <p className="empty">
                 No saved matches. Select Analyze sources to run matching again.
               </p>

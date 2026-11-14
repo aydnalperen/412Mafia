@@ -2283,6 +2283,218 @@ select {
 }
 
 /* ==========================================================================
+   Flashcards Study Workspace
+   ========================================================================== */
+
+.flashcards-controls-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flashcards-generate-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.flashcards-topic-field {
+  flex: 1 1 280px;
+  margin: 0;
+}
+
+.flashcards-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.flashcards-summary-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.flashcards-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flashcards-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-muted);
+}
+
+.flashcard-filter-btn {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-snappy),
+    color var(--duration-fast) var(--ease-snappy),
+    border-color var(--duration-fast) var(--ease-snappy);
+}
+
+.flashcard-filter-btn:hover {
+  color: var(--text-primary);
+}
+
+.flashcard-filter-btn.active {
+  background: var(--bg-surface);
+  color: var(--accent);
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-xs);
+}
+
+.flashcards-progress-track {
+  width: 100%;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-muted);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.flashcards-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--accent), #0d9488);
+  transition: width 260ms var(--ease-snappy);
+}
+
+.flashcards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.flashcard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color var(--duration-fast) var(--ease-snappy),
+    box-shadow var(--duration-fast) var(--ease-snappy);
+}
+
+.flashcard-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.flashcard-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flashcard-source-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flashcard-prompt {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.flashcard-prompt .source-excerpt {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.flashcard-reveal {
+  margin-top: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.flashcard-reveal-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+  background: rgba(79, 70, 229, 0.03);
+}
+
+.flashcard-reveal-summary:hover {
+  background: rgba(79, 70, 229, 0.07);
+}
+
+.flashcard-reveal-body {
+  padding: 14px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flashcard-answer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.flashcard-answer-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.flashcard-answer-text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.flashcard-rating-actions {
+  margin: 0;
+}
+
+.flashcard-rate-btn.known[aria-pressed="true"] {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.flashcard-rate-btn.review_again[aria-pressed="true"] {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+  color: var(--warning-text);
+}
+
+/* ==========================================================================
    Responsive Breakpoints
    ========================================================================== */
 
@@ -2293,7 +2505,8 @@ select {
 
   .question-workspace,
   .oral-workspace,
-  .overview-split-grid {
+  .overview-split-grid,
+  .flashcards-grid {
     grid-template-columns: 1fr;
   }
 

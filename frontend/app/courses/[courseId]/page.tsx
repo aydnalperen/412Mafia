@@ -11,6 +11,7 @@ import { QuestionsWorkspace } from "@/components/course/questions-workspace";
 import {
   apiErrorMessage,
   coursesApi,
+  flashcardsApi,
   knowledgeApi,
   materialsApi,
   questionsApi,
@@ -81,6 +82,7 @@ export default function CoursePage({
   const [latestJob, setLatestJob] = useState<TranscriptionJob | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
+  const [flashcardsCount, setFlashcardsCount] = useState(0);
   const [transcriptPreview, setTranscriptPreview] = useState<{
     materialId: string | number;
     fileName: string;
@@ -141,20 +143,28 @@ export default function CoursePage({
       }
       setError(null);
       try {
-        const [courseData, materialList, jobList, questionList, graphData] =
-          await Promise.all([
-            coursesApi.get(id),
-            materialsApi.list(id),
-            recordingsApi.list(id),
-            questionsApi.list(id),
-            knowledgeApi.get(id),
-          ]);
+        const [
+          courseData,
+          materialList,
+          jobList,
+          questionList,
+          graphData,
+          flashcardList,
+        ] = await Promise.all([
+          coursesApi.get(id),
+          materialsApi.list(id),
+          recordingsApi.list(id),
+          questionsApi.list(id),
+          knowledgeApi.get(id),
+          flashcardsApi.list(id),
+        ]);
         setCourse(courseData);
         setMaterials(materialList);
         const latest = jobList[0] ?? null;
         setLatestJob(latest);
         setQuestions(questionList);
         setGraph(graphData);
+        setFlashcardsCount(flashcardList.length);
 
         const primaryTranscript =
           (latest?.output_material_id
@@ -273,6 +283,9 @@ export default function CoursePage({
                 <span className="course-stat-pill">
                   <strong>{questions.length}</strong> exam questions
                 </span>
+                <span className="course-stat-pill">
+                  <strong>{flashcardsCount}</strong> flashcards
+                </span>
               </div>
             </div>
 
@@ -336,6 +349,7 @@ export default function CoursePage({
                 onClick={() => switchTab("flashcards")}
               >
                 Flashcards
+                <span className="course-tab-count">{flashcardsCount}</span>
               </button>
             </div>
           </section>
@@ -671,6 +685,7 @@ export default function CoursePage({
               oralSession={selectedOralSessionId}
               onOpenKnowledge={() => switchTab("knowledge")}
               onOpenOral={() => switchTab("oral")}
+              onCardsChanged={(items) => setFlashcardsCount(items.length)}
             />
           )}
         </>
