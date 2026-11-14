@@ -69,12 +69,14 @@ class QuestionEvidenceTests(TestCase):
         foreign = Material.objects.create(course=other, kind=Material.Kind.SLIDES,
                                           status=Material.Status.READY, file="materials/foreign.pdf")
         SourceChunk.objects.create(material=foreign, text="Aliasing in sampled signals", sequence=0, page_number=9)
-        sources = self.client.get(f"/api/questions/{question['id']}/sources/").json()
+        path = f"/api/questions/{question['id']}/sources/"
+        self.assertEqual(self.client.get(path).json(), [])
+        sources = self.client.post(path).json()
         self.assertEqual(len(sources), 1)
         self.assertEqual(sources[0]["chunk_id"], chunk.pk)
         self.assertEqual((sources[0]["start_seconds"], sources[0]["end_seconds"]), (18, 26))
         self.assertEqual(sources[0]["material_title"], "lecture.txt")
-        self.assertEqual(self.client.get(f"/api/questions/{question['id']}/sources/").json(), sources)
+        self.assertEqual(self.client.get(path).json(), sources)
         self.assertEqual(QuestionSourceLink.objects.count(), 1)
 
     def test_lettered_exam_sections_stop_at_solutions_not_numbered_answer_steps(self):
@@ -128,19 +130,24 @@ class QuestionEvidenceTests(TestCase):
         with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key", "OPENROUTER_FAST_MODEL": "test/model"}):
             with patch("exams.service.request.urlopen", return_value=reply([
                 {"chunk_id": chunk.pk, "score": 0.85, "reason": "Explains aliasing in sampling"}])) as call:
-                result = self.client.get(path).json()
+                self.assertEqual(self.client.get(path).json(), [])
+                call.assert_not_called()
+                result = self.client.post(path).json()
                 self.assertEqual(result[0]["method"], "openrouter")
                 self.assertEqual(result[0]["chunk_id"], chunk.pk)
                 self.assertEqual(result[0]["score"], 0.85)
                 payload = json.loads(call.call_args.args[0].data)
                 self.assertEqual(payload["model"], "test/model")
                 self.assertNotIn(str(alien.pk), payload["messages"][1]["content"])
+                call.reset_mock()
+                self.assertEqual(self.client.get(path).json(), result)
+                call.assert_not_called()
             self.assertEqual(QuestionSourceLink.objects.get().method, "openrouter")
             with patch("exams.service.request.urlopen", return_value=reply([
                 {"chunk_id": alien.pk, "score": 0.95, "reason": "Wrong course"}])):
-                fallback = self.client.get(path).json()
+                fallback = self.client.post(path).json()
                 self.assertEqual(fallback[0]["method"], "keyword-idf")
                 self.assertEqual(QuestionSourceLink.objects.get().method, "keyword-idf")
             with patch("exams.service.request.urlopen", return_value=reply([])):
-                self.assertEqual(self.client.get(path).json(), [])
+                self.assertEqual(self.client.post(path).json(), [])
                 self.assertFalse(QuestionSourceLink.objects.exists())

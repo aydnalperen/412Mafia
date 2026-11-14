@@ -7,7 +7,6 @@ export default function KnowledgePage({ params }: { params: { courseId: string }
   const id = params.courseId;
   const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [useProvider, setUseProvider] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +16,6 @@ export default function KnowledgePage({ params }: { params: { courseId: string }
     setLoading(true);
     setError(null);
     setGraph(null);
-    setUseProvider(false);
     Promise.all([knowledgeApi.get(id), questionsApi.list(id)])
       .then(([savedGraph, savedQuestions]) => {
         if (!active) return;
@@ -35,17 +33,16 @@ export default function KnowledgePage({ params }: { params: { courseId: string }
     };
   }, [id]);
 
-  async function generate() {
+  async function generate(mode: "local" | "openrouter") {
     setGenerating(true);
     setError(null);
     try {
-      const updated = await knowledgeApi.generate(id, useProvider ? "openrouter" : "local");
+      const updated = await knowledgeApi.generate(id, mode);
       setGraph(updated);
       setQuestions(await questionsApi.list(id));
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
-      setUseProvider(false);
       setGenerating(false);
     }
   }
@@ -58,23 +55,16 @@ export default function KnowledgePage({ params }: { params: { courseId: string }
       <h1>Knowledge graph</h1>
       {graph && (
         <div className="card">
-          <button type="button" className="btn" disabled={generating} onClick={generate}>
-            Generate topics
+          <button type="button" className="btn" disabled={generating} onClick={() => void generate("local")}>
+            Generate topics locally
           </button>
           {graph.openrouter_available && (
-            <p>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={useProvider}
-                  disabled={generating}
-                  onChange={(event) => setUseProvider(event.target.checked)}
-                />
-                {" "}Use OpenRouter for this run
-              </label>
-              <span className="note"> Sends selected course excerpts to OpenRouter.</span>
-            </p>
+            <button type="button" className="btn secondary" disabled={generating}
+              onClick={() => void generate("openrouter")}>
+              Re-analyze topics with OpenRouter
+            </button>
           )}
+          {graph.openrouter_available && <p className="note">Sends selected course excerpts to OpenRouter; may incur a charge.</p>}
         </div>
       )}
       {loading && <p role="status" className="loading">Loading knowledge graph…</p>}

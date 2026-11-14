@@ -51,6 +51,19 @@ export default function QuestionsPage({
     }
   };
 
+  const analyzeSources = async () => {
+    if (!selected || sourceLoading) return;
+    setSourceLoading(true);
+    setError(null);
+    try {
+      setSources(await questionsApi.analyzeSources(selected.id));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSourceLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <main className="page container">
@@ -141,6 +154,10 @@ export default function QuestionsPage({
           </div>
         </div>
 
+        <button type="button" className="btn small" disabled={sourceLoading} onClick={() => void analyzeSources()}>
+          {sources === null ? "Analyze sources" : "Re-analyze sources"}
+        </button>
+
         <div className="callout-info">
           <svg
             width="16"
@@ -158,7 +175,7 @@ export default function QuestionsPage({
             <path d="M12 8h.01" />
           </svg>
           <p className="note" style={{ margin: 0 }}>
-            Candidates use keyword matching; when configured, OpenRouter ranks them. Scores are heuristics, not verified probabilities. Check the cited passage before relying on it.
+            This button re-runs keyword matching and, when configured, OpenRouter ranking. It may send question and course excerpts to OpenRouter and incur a charge. Scores are heuristics; check the cited passage.
           </p>
         </div>
 
@@ -173,7 +190,9 @@ export default function QuestionsPage({
             <span className="spinner" aria-hidden="true" />
             <span>Loading sources…</span>
           </div>
-        ) : !!error ? null : sources === null || sources.length === 0 ? (
+        ) : !!error ? null : sources === null ? (
+          <p className="empty">No saved matches. Select Analyze sources to run matching again.</p>
+        ) : sources.length === 0 ? (
           <p className="empty">
             <span className="empty-icon" aria-hidden="true">
               <svg

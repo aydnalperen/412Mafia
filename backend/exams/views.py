@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from courses.models import Course
 
 from .models import ExamQuestion
-from .service import sources_for
+from .service import saved_sources_for, sources_for
 
 
 class QuestionsView(APIView):
@@ -22,5 +22,9 @@ class QuestionsView(APIView):
 
 class QuestionSourcesView(APIView):
     def get(self, request, question_id):
+        question = get_object_or_404(ExamQuestion, pk=question_id)
+        return Response(saved_sources_for(question))
+
+    def post(self, request, question_id):
         question = get_object_or_404(ExamQuestion, pk=question_id)
         return Response(sources_for(question))

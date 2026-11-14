@@ -161,6 +161,8 @@ export const questionsApi = {
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/questions/`),
   sources: (questionId: string | number): Promise<QuestionSource[]> =>
     request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`),
+  analyzeSources: (questionId: string | number): Promise<QuestionSource[]> =>
+    request(`${API_BASE}/api/questions/${encodeURIComponent(String(questionId))}/sources/`, { method: "POST" }),
 };
 
 export type KnowledgeGraph = {

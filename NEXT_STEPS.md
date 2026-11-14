@@ -1,29 +1,31 @@
-# LectureGraph — sonraki uygulama talimatları
+# LectureGraph — güncel durum ve sonraki adımlar
 
-Bu belge, mevcut koddan devam edecek geliştirici/ajan içindir. Önce `README.md`, `ROADMAP.md` ve ilgili dosyaları okuyup gerçek durumu doğrula; roadmap'teki önerileri tamamlanmış özellik sanma. Mevcut değişiklikleri silme veya üzerine yazma.
+Bu belge mevcut koddan devam edecek geliştirici/ajan içindir. `README.md` ve ilgili kodu doğrula; `ROADMAP.md` hedefleri ve işaretlenmemiş kutuları uygulamanın güncel durumunu yansıtmayabilir. Mevcut değişiklikleri silme veya üzerine yazma.
 
-## Mevcut durum ve hedef
+## Yapılmış olanlar
 
-- Django/Next.js yerel demosunda ders, materyal, kaynak parçası (`SourceChunk`), sınav sorusu (`ExamQuestion`) ve soru–kaynak bağı (`QuestionSourceLink`) var. Kayıtlar OpenAI Whisper ile metne çevriliyor. `backend/exams/service.py` anahtar kelime adaylarını, yapılandırılmışsa OpenRouter ile yeniden sıralıyor; bu henüz bir knowledge graph değil.
-- Sözlü sınav, konu düğümleri ve konu gezintisi henüz yok. **Sıradaki hedef:** gerçek kaynaklara bağlı, ders kapsamlı **mantıksal knowledge graph** kurmak; ardından bunu P0 metin tabanlı sözlü sınavda kullanmak.
-- Graph veritabanı, görsel graph editörü, embeddings, flashcard ve yeni ajan altyapısı ekleme. Roadmap'in önerdiği gibi ilişkileri Django/PostgreSQL tablolarıyla temsil et.
+- Django/Next.js yerel demosunda ders oluşturma, transkript/slayt/sınav materyali yükleme, gerçek sayfa veya zaman bilgisiyle `SourceChunk` çıkarma ve numaralı sınav sorularını görüntüleme var. Soru–kaynak eşleştirmesi aynı dersteki gerçek parçalardan yapılıyor; OpenRouter yeniden sıralaması isteğe bağlı.
+- MP4/MP3 kaydı ayrı `/api/courses/{id}/recordings/` endpoint'ine yükleniyor. HTTP isteği dışında çalışan worker, FFmpeg ve OpenAI Whisper ile transkript oluşturuyor; iş durumu ve transkript görüntülenebiliyor. Bu akış canlı sağlayıcıyla uçtan uca doğrulanmış sayılmamalı.
+- `backend/knowledge/` içinde ders kapsamlı `Topic`, `TopicSourceLink` ve `QuestionTopicLink` modelleri, migration, yerel/isteğe bağlı OpenRouter üretimi ve `GET /api/courses/{id}/knowledge/` ile `POST .../generate/` var. Frontend'de konu → soru/kaynak gezintisi mevcut. Üretim açıkça tetikleniyor; doğrulanmamış kaynak ID'leri kabul edilmiyor ve sağlayıcı hatası önceki grafı silmiyor. Bu, akademik olarak doğrulanmış bir ontoloji değil; metinden çıkarılmış kaynaklı konu haritası.
+- Soru–kaynak eşleştirmesi ve konu grafı sitedeki ayrı yeniden analiz butonlarıyla çalıştırılabiliyor; sonuçları görüntülemek ücretli OpenRouter çağrısı başlatmıyor. Soru eşleştirmesinde sağlayıcı hatası mevcut anahtar kelime sonuçlarına döner.
+- Son kontrol sırasında 42 Django testi, `manage.py check`, frontend `typecheck` ve `build` başarılıydı. Yeni değişikliklerden sonra yeniden çalıştır.
 
-## 1. Kaynaklı knowledge graph (öncelik)
+## 1. Öncelik: P0 metin tabanlı sözlü sınav
 
-Grafın düğümleri: mevcut ders, materyal, `SourceChunk`, `ExamQuestion` ve yeni `Topic`. Bağları: mevcut soru → kaynak (`QuestionSourceLink`), yeni konu → kaynak ve soru → konu. Sadece gerçek düğümler ve ders içindeki gerçek bağlar saklanır; `Topic` adları kaynak metninden çıkarılan kavramlardır, doğrulanmış akademik ontoloji değildir.
+`ROADMAP.md` §7–8'deki `start → answer/follow-up → report` akışını uygula. Oturum, sorular, yanıtlar ve değerlendirmeler veritabanında kalsın; sayfa yenilemede devam etsin ve tur sınırı olsun. Seçili ders/konu/soru için yalnızca aynı dersteki gerçek kaynak parçalarını kullan; graf boşsa mevcut soru–kaynak eşleştirmesine dön veya yeterli kanıt olmadığını söyle. Modelin önerdiği her kaynak ID'sini doğrula; sayfa, zaman, alıntı veya eşleşme uydurma. Öğrenci girdisi ve yüklenen metin güvenilmezdir.
 
-1. `backend/knowledge/` Django uygulamasını yalnızca ihtiyaç duyulan modeller ve migration ile ekle: `Topic(course, name, description)`; `TopicSourceLink(topic, chunk)`; `QuestionTopicLink(question, topic)`. Ders içinde konu adı/bağ çiftleri tekil olsun. Yalnızca aynı derse ait nesneler bağlanabilsin; kuralı servis/API'de ve model doğrulamasında uygula. Mevcut `QuestionSourceLink` kayıtlarını kopyalayıp ikinci bir soru–kaynak tablosu yaratma.
-2. Var olan hazır transcript/slide/study chunk'ları ile gerçek sınav sorularından, ders başına küçük ve tekrarlanabilir bir konu haritası oluştur. Önce sınırlı aday çıkarımı yap; OpenRouter yalnızca backend'de yapılandırılmışsa sınırlı metinle konu adları ve **aday chunk/question ID'leri** önersin. JSON biçimini, tekrarları, uzunlukları ve her ID'nin aynı derste gerçekten adaylar arasında olduğunu doğrula. Materyalde açıkça bulunmayan ilişkiyi kaydetme; geçersiz/eksik model yanıtında sahte düğüm veya bağ üretme. Model yoksa deterministik adaylarla çalış ya da boş grafı dürüstçe göster. Kaynak metnindeki komutları talimat sayma.
-3. Yeniden çalıştırma idempotent olsun: aynı ders/materyal için yinelenen düğüm/bağ oluşturmasın; başarısız bir çalıştırma mevcut geçerli bağları silmesin. Materyal silindiğinde/yeniden işlendiğinde eski referansların nasıl temizlendiğini test et. Pahalı model çağrılarını `GET` sırasında otomatik tekrarlama; üretimi açıkça tetiklenen, sınırlı bir işlem yap ve mevcut durumu yalnızca oku.
-4. Derse bağlı bir `GET /api/courses/{id}/knowledge/` görünümü ekle: konular, ilgili soru ID'leri ve kaynak chunk ID'leri ile gerçek dosya adı ve **varsa** sayfa/zaman bilgisi döndür. Graf yoksa boş durum döndür. Frontend'de ders ekranından açılan sade konu → sorular → kaynaklar listesi yap; graph çizim kütüphanesi gerekmez. Kaynak excerpt'lerini orijinal chunk'tan göster, sayfa/zaman uydurma. Yeni üretim endpoint'i eklenecekse yalnızca yerel demo sınırlarında erişilebilir kalsın ve hataları açıkça dönsün.
-5. Test et: farklı ders ID'si reddedilir; uydurma chunk/question ID'si reddedilir; model/HTTP hatası güvenli davranır; aynı işlem iki kez aynı sayıda düğüm/bağ verir; boş veya alakasız materyal sahte eşleşme vermez. Migrations ve frontend tiplerini/API çağrılarını güncelle.
+Rapor güçlü yönleri, eksik kavramları ve **gerçek kaynaklara bağlı** çalışma önerilerini göstermeli. OpenRouter anahtarları ve çağrıları Django'da kalsın; çağrı/tur bütçesini sınırla, sağlayıcı veya geçersiz yanıt hatalarını açıkça ele al. Backend modelleri, migration, servis, API, frontend ekranı ve bu akışı doğrulayan küçük testleri birlikte tamamla. Sözlü sınav bitmeden flashcard veya yeni graph altyapısına geçme.
 
-## 2. P0 sözlü sınav (grafın ardından)
+## 2. Uçtan uca demo ve dokümantasyon
 
-`ROADMAP.md` §7–8'deki metin akışını uygula: `start → answer/follow-up → report`, en fazla yapılandırılmış turn sayısı; oturum ve yanıtlar veritabanında kalmalı. Seçili konu/soru için yalnızca aynı dersten doğrulanmış chunk'ları getir; graf boşsa mevcut soru–kaynak eşleştirmesine dön veya kanıt yok de. OpenRouter anahtarı ve modelleri yalnızca Django ortamında kalsın; yanıt/model kaynak ID'lerini doğrula, yetersiz kanıtta atıf uydurma. Rapordaki eksikler ve çalışma önerileri gerçek kaynaklara bağlansın. Fiyat/tur sınırı ve sağlayıcı hatalarını ele al; öğrenci girdisini güvenilmez kabul et. Bunu bitirmeden P1 flashcard veya graph görselleştirmesine geçme.
+- İzinli gerçek materyalle ders → kayıt/transkript → slayt/sınav → kaynak eşleştirmesi → konu grafı → sözlü sınav → rapor akışını yerel PostgreSQL ve çalışan worker üzerinde doğrula. Özellikle Whisper/OpenRouter erişimini, gerçek zaman damgalarını, kaynak bağlantılarını ve sağlayıcı hatalarını kontrol et. Ücretli çağrılar veya gerçek materyali sağlayıcıya gönderme için önceden izin al; testlerde HTTP'yi mock'la.
+- `ROADMAP.md` içindeki eski P0/P1 kutularını ve çelişen açıklamaları, doğrulanan uygulama durumuna göre güncelle. `README.md` sözlü sınav tamamlanınca yeni kurulum/akış ve sınırlara göre güncellenmeli.
 
-## Çalışma ve teslim ölçütü
+## 3. P0 sonrasında isteğe bağlı
 
-- Küçük dilimler halinde ilerle: önce modeller + doğrulama + migration + test, sonra üretim servisi, API, UI, ardından sözlü sınav. Var olan upload/matching yollarını bozma.
-- Mevcut manifestlere göre `backend/` altında `DB_ENGINE=sqlite .venv/bin/python manage.py test` ve `... manage.py check`; `frontend/` altında `npm run typecheck` ve gerekirse `npm run build` çalıştır. Komutları gerçekten çalıştırmadan başarılı olduklarını söyleme.
-- Demo yalnızca izole localhost'ta kalmalı; kimlik doğrulaması olmadan internete açma. OpenRouter çağrısı maliyet/mahremiyet doğurur: gerçek materyalle canlı deneme yalnızca izinle; testlerde HTTP'yi mock'la. Çıktıda neyin uygulandığını, test edildiğini ve ertelendiğini kısa raporla.
+- P1: gerçek kaynaklara bağlı flashcard üretimi ve Known / Review Again durumu; yalnızca ihtiyaç çıkarsa sınırlı rol orkestrasyonu. Kayıt transkripsiyonu ve temel konu gezintisi zaten mevcut; yeniden inşa etme.
+- P2/üretim: kimlik doğrulama ve güvenli barındırma, ölçekli worker/depolama, OCR, sesli sınav ve öğretim üyesi paneli. Yerel demo için bunlar önkoşul değil.
+
+## Çalışma ve güvenlik sınırı
+
+Küçük dilimler halinde ilerle; var olan upload, transkripsiyon, eşleştirme ve graf yollarını bozma. Backend için `DB_ENGINE=sqlite .venv/bin/python manage.py test` ve `DB_ENGINE=sqlite .venv/bin/python manage.py check`; frontend için `npm run typecheck` ve `npm run build` çalıştır. Çalıştırılmayan kontrolleri başarılı diye raporlama. Demo kimlik doğrulamasız ve yalnızca izole localhost için: internete açma, tünelleme veya dışarıdan erişilen proxy arkasına koyma. `OPENAI_API_KEY` ve `OPENROUTER_API_KEY` yalnızca backend ortamında kalsın.

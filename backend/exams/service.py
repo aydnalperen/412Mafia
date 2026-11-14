@@ -158,8 +158,21 @@ def sources_for(question):
             elif (link.score, link.reason, link.method) != (score, explanation, method):
                 link.score, link.reason, link.method = score, explanation, method
                 link.save(update_fields=["score", "reason", "method"])
-    return [{"chunk_id": chunk.pk, "text": chunk.text, "material_title": Path(chunk.material.file.name).name,
-             "material_kind": chunk.material.kind, "page_number": chunk.page_number,
-             "start_seconds": chunk.start_seconds, "end_seconds": chunk.end_seconds,
-             "score": score, "reason": reason if method == "openrouter" else f"Shared terms: {reason}", "method": method}
+    return [source_result(chunk, score, reason if method == "openrouter" else f"Shared terms: {reason}", method)
             for score, chunk, reason in best]
+
+
+def source_result(chunk, score, reason, method):
+    return {"chunk_id": chunk.pk, "text": chunk.text, "material_title": Path(chunk.material.file.name).name,
+            "material_kind": chunk.material.kind, "page_number": chunk.page_number,
+            "start_seconds": chunk.start_seconds, "end_seconds": chunk.end_seconds,
+            "score": score, "reason": reason, "method": method}
+
+
+def saved_sources_for(question):
+    links = QuestionSourceLink.objects.filter(
+        question=question, chunk__material__course_id=question.course_id,
+        chunk__material__status=Material.Status.READY,
+        chunk__material__kind__in=[Material.Kind.TRANSCRIPT, Material.Kind.SLIDES, Material.Kind.STUDY],
+    ).select_related("chunk__material").order_by("-score", "chunk_id")
+    return [source_result(link.chunk, link.score, link.reason, link.method) for link in links]
