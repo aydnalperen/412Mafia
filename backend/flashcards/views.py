@@ -28,10 +28,12 @@ class GenerateFlashcardsView(APIView):
         if field == "topic_id":
             topic = get_object_or_404(Topic, pk=value, course_id=course_id)
             targets = topic_targets(topic)
+            focus_title = topic.name
         else:
             session = get_object_or_404(OralSession, pk=value, course_id=course_id, status="completed")
             targets = oral_targets(session)
-        return Response([card_data(card) for card in generate_cards(targets)])
+            focus_title = session.question.text
+        return Response([card_data(card) for card in generate_cards(targets, focus_title=focus_title)])
 
 
 class FlashcardReviewView(APIView):

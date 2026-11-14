@@ -138,6 +138,7 @@ export default function CoursesPage() {
                 <label htmlFor="course-description">Description</label>
                 <textarea
                   id="course-description"
+                  rows={4}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Optional course description"
@@ -191,7 +192,7 @@ export default function CoursesPage() {
               <span>No courses yet. Create one above to get started.</span>
             </div>
           ) : (
-            <ul className="course-list">
+            <ul className="course-list courses-cards-grid">
               {courses.map((course) => (
                 <li key={course.id} className="course-item">
                   <div className="course-item-main">
