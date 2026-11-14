@@ -40,6 +40,14 @@ export function OralWorkspace({
   const [startingQuestionId, setStartingQuestionId] = useState<
     string | number | null
   >(null);
+  const [analyzingQuestionId, setAnalyzingQuestionId] = useState<
+    string | number | null
+  >(null);
+  const [sourceCounts, setSourceCounts] = useState<
+    Record<string | number, number>
+  >({});
+  const [needsAnalysisQuestion, setNeedsAnalysisQuestion] =
+    useState<Question | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
@@ -47,6 +55,7 @@ export function OralWorkspace({
     setLoading(true);
     setError(null);
     setSession(null);
+    setNeedsAnalysisQuestion(null);
     const stored = localStorage.getItem(sessionKey(courseId));
     Promise.all([
       questionsApi.list(courseId),
@@ -62,6 +71,23 @@ export function OralWorkspace({
         setQuestions(items);
         if (saved && String(saved.course_id) === courseId) setSession(saved);
         else if (saved) localStorage.removeItem(sessionKey(courseId));
+        if (items.length > 0) {
+          Promise.all(
+            items.map((item) =>
+              questionsApi
+                .sources(item.id)
+                .then((links) => [item.id, links.length] as const)
+                .catch(() => [item.id, null] as const)
+            )
+          ).then((pairs) => {
+            if (!active) return;
+            const next: Record<string | number, number> = {};
+            for (const [id, count] of pairs) {
+              if (count != null) next[id] = count;
+            }
+            setSourceCounts(next);
+          });
+        }
       })
       .catch((err: unknown) => {
         if (active) setError(err);
@@ -74,23 +100,62 @@ export function OralWorkspace({
     };
   }, [courseId]);
 
+  const beginOralSession = async (question: Question) => {
+    const s = await oralApi.start(courseId, {
+      question_id: Number(question.id),
+    });
+    localStorage.setItem(sessionKey(courseId), String(s.id));
+    setSelected(question);
+    setSession(s);
+    setAnswer("");
+    setNeedsAnalysisQuestion(null);
+  };
+
   const startExam = async (question: Question) => {
     if (submitting) return;
     setError(null);
+    setNeedsAnalysisQuestion(null);
     setSubmitting(true);
     setStartingQuestionId(question.id);
     try {
-      const s = await oralApi.start(courseId, {
-        question_id: Number(question.id),
-      });
-      localStorage.setItem(sessionKey(courseId), String(s.id));
-      setSelected(question);
-      setSession(s);
-      setAnswer("");
+      await beginOralSession(question);
+    } catch (err) {
+      const msg = apiErrorMessage(err);
+      if (
+        msg.toLowerCase().includes("analyze sources for this question first")
+      ) {
+        setNeedsAnalysisQuestion(question);
+        setSourceCounts((prev) => ({ ...prev, [question.id]: 0 }));
+      }
+      setError(err);
+    } finally {
+      setSubmitting(false);
+      setStartingQuestionId(null);
+    }
+  };
+
+  const analyzeAndStart = async (question: Question) => {
+    if (submitting) return;
+    setError(null);
+    setSubmitting(true);
+    setAnalyzingQuestionId(question.id);
+    setStartingQuestionId(question.id);
+    try {
+      const links = await questionsApi.analyzeSources(question.id);
+      setSourceCounts((prev) => ({ ...prev, [question.id]: links.length }));
+      if (links.length === 0) {
+        setNeedsAnalysisQuestion(question);
+        setError(
+          "No reliable lecture transcript or slide evidence matched this question yet. Upload matching course materials or inspect matches on Exam questions."
+        );
+        return;
+      }
+      await beginOralSession(question);
     } catch (err) {
       setError(err);
     } finally {
       setSubmitting(false);
+      setAnalyzingQuestionId(null);
       setStartingQuestionId(null);
     }
   };
@@ -151,9 +216,33 @@ export function OralWorkspace({
     return (
       <>
         {error != null && (
-          <p role="alert" className="error">
-            {apiErrorMessage(error)}
-          </p>
+          <div role="alert" className="error" style={{ display: "grid", gap: "10px" }}>
+            <p style={{ margin: 0 }}>{apiErrorMessage(error)}</p>
+            {needsAnalysisQuestion && (
+              <div className="actions" style={{ marginTop: 0 }}>
+                <button
+                  type="button"
+                  className="btn small"
+                  disabled={submitting}
+                  onClick={() => void analyzeAndStart(needsAnalysisQuestion)}
+                >
+                  {analyzingQuestionId === needsAnalysisQuestion.id
+                    ? "Analyzing sources…"
+                    : `Analyze sources & start Q${needsAnalysisQuestion.question_number}`}
+                </button>
+                {onOpenQuestions && (
+                  <button
+                    type="button"
+                    className="btn small secondary"
+                    disabled={submitting}
+                    onClick={() => onOpenQuestions(needsAnalysisQuestion.id)}
+                  >
+                    Inspect in Exam questions
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {questions.length === 0 ? (
@@ -212,8 +301,7 @@ export function OralWorkspace({
                 <path d="M12 8h.01" />
               </svg>
               <p className="note" style={{ margin: 0 }}>
-                Pick a past-exam question with saved source matches to begin (up
-                to {MAX_TURNS} turns).{" "}
+                Pick a past-exam question to begin a bounded oral practice session (up to {MAX_TURNS} turns). Questions without saved lecture evidence can be analyzed in one click right here or reviewed on{" "}
                 {onOpenQuestions ? (
                   <button
                     type="button"
@@ -221,15 +309,14 @@ export function OralWorkspace({
                     style={{ background: "none", border: "none", padding: 0 }}
                     onClick={() => onOpenQuestions()}
                   >
-                    Analyze its sources on Exam questions
+                    Exam questions
                   </button>
                 ) : (
                   <a href={`/courses/${courseId}/questions`} className="link">
-                    Analyze its sources on Exam questions
+                    Exam questions
                   </a>
-                )}{" "}
-                first. Requires backend OpenRouter configuration and may incur a
-                charge per answer. Feedback is formative, not an official grade.
+                )}
+                . Requires backend OpenRouter configuration; feedback is formative, not an official grade.
               </p>
             </div>
 
@@ -237,6 +324,9 @@ export function OralWorkspace({
               {questions.map((question) => {
                 const parsed = splitQuestionTitleAndBody(question.text);
                 const isStarting = startingQuestionId === question.id;
+                const isAnalyzing = analyzingQuestionId === question.id;
+                const savedCount = sourceCounts[question.id];
+                const needsAnalysis = savedCount === 0;
 
                 return (
                   <li className="question-item-card" key={question.id}>
@@ -248,6 +338,19 @@ export function OralWorkspace({
                         {question.page_number != null && (
                           <span className="meta-chip mono">
                             p. {question.page_number}
+                          </span>
+                        )}
+                        {savedCount !== undefined && (
+                          <span
+                            className={`badge ${savedCount > 0 ? "status-ready" : "status-active"}`}
+                            style={{ marginLeft: "auto", textTransform: "none" }}
+                          >
+                            <span className="badge-dot" aria-hidden="true" />
+                            <span>
+                              {savedCount > 0
+                                ? `${savedCount} source${savedCount === 1 ? "" : "s"} saved`
+                                : "Needs source analysis"}
+                            </span>
                           </span>
                         )}
                       </div>
@@ -267,6 +370,7 @@ export function OralWorkspace({
                           <button
                             type="button"
                             className="btn small secondary"
+                            disabled={submitting}
                             onClick={() => onOpenQuestions(question.id)}
                           >
                             Sources
@@ -276,10 +380,20 @@ export function OralWorkspace({
                           type="button"
                           className="btn small"
                           disabled={submitting}
-                          onClick={() => void startExam(question)}
+                          onClick={() =>
+                            void (needsAnalysis
+                              ? analyzeAndStart(question)
+                              : startExam(question))
+                          }
                         >
                           <span>
-                            {isStarting ? "Starting…" : "Start oral exam"}
+                            {isAnalyzing
+                              ? "Analyzing sources…"
+                              : isStarting
+                                ? "Starting…"
+                                : needsAnalysis
+                                  ? "Analyze sources & start"
+                                  : "Start oral exam"}
                           </span>
                           <svg
                             width="14"
