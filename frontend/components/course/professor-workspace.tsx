@@ -12,30 +12,31 @@ import {
 } from "@/lib/api";
 import { formatTimestampRange, splitQuestionTitleAndBody } from "@/lib/format";
 
-const CATEGORY_LABELS: Record<ProfessorFeedbackCategory, string> = {
-  rubric_note: "Rubric & grading note",
-  emphasis: "Exam emphasis",
-  clarification: "Concept clarification",
-  coverage_gap: "Coverage gap",
-};
+const NOTE_TYPE_OPTIONS: Array<{
+  value: ProfessorFeedbackCategory;
+  label: string;
+  badgeClass: string;
+}> = [
+  { value: "emphasis", label: "Exam focus", badgeClass: "teal-badge" },
+  { value: "rubric_note", label: "Grading tip", badgeClass: "kind-badge" },
+  { value: "clarification", label: "Clarification", badgeClass: "status-ready" },
+  { value: "coverage_gap", label: "Coverage gap", badgeClass: "status-active" },
+];
 
-const CATEGORY_BADGE_CLASS: Record<ProfessorFeedbackCategory, string> = {
-  rubric_note: "kind-badge",
-  emphasis: "teal-badge",
-  clarification: "status-ready",
-  coverage_gap: "status-active",
+const CATEGORY_META: Record<
+  ProfessorFeedbackCategory,
+  { label: string; badgeClass: string }
+> = {
+  emphasis: { label: "Exam focus", badgeClass: "teal-badge" },
+  rubric_note: { label: "Grading tip", badgeClass: "kind-badge" },
+  clarification: { label: "Clarification", badgeClass: "status-ready" },
+  coverage_gap: { label: "Coverage gap", badgeClass: "status-active" },
 };
 
 const ALIGNMENT_LABEL: Record<string, { label: string; className: string }> = {
-  well_aligned: { label: "Well aligned", className: "status-ready" },
-  exam_heavy_gap: { label: "Exam gap · needs material", className: "status-active" },
-  taught_untested: { label: "Taught · untested", className: "" },
-};
-
-const QUESTION_STATUS_LABEL: Record<string, { label: string; className: string }> = {
-  supported: { label: "Well supported", className: "status-ready" },
-  partial: { label: "Partial evidence", className: "kind-badge" },
-  uncovered: { label: "No saved evidence", className: "status-active" },
+  well_aligned: { label: "Covered & tested", className: "status-ready" },
+  exam_heavy_gap: { label: "Needs lecture depth", className: "status-active" },
+  taught_untested: { label: "Not yet tested", className: "" },
 };
 
 export function ProfessorWorkspace({
@@ -61,13 +62,10 @@ export function ProfessorWorkspace({
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [busyFeedbackId, setBusyFeedbackId] = useState<number | null>(null);
   const [questionFilter, setQuestionFilter] = useState<"all" | "gaps">("all");
-  const [feedbackFilter, setFeedbackFilter] = useState<"all" | "pinned" | ProfessorFeedbackCategory>("all");
 
-  const [authorName, setAuthorName] = useState("Course Instructor");
-  const [category, setCategory] = useState<ProfessorFeedbackCategory>("rubric_note");
-  const [targetType, setTargetType] = useState<"course" | "topic" | "question">("course");
-  const [selectedTopicId, setSelectedTopicId] = useState<string>("");
-  const [selectedQuestionId, setSelectedQuestionId] = useState<string>("");
+  // Simplified unified target value: "course" | "question:<id>" | "topic:<id>"
+  const [targetValue, setTargetValue] = useState<string>("course");
+  const [category, setCategory] = useState<ProfessorFeedbackCategory>("emphasis");
   const [title, setTitle] = useState("");
   const [comment, setComment] = useState("");
   const [isPinned, setIsPinned] = useState(true);
@@ -137,25 +135,34 @@ export function ProfessorWorkspace({
     setSavingFeedback(true);
     setError(null);
     setStatusMessage(null);
+
+    let topicId: number | null = null;
+    let questionId: number | null = null;
+    if (targetValue.startsWith("topic:")) {
+      topicId = Number(targetValue.slice("topic:".length));
+    } else if (targetValue.startsWith("question:")) {
+      questionId = Number(targetValue.slice("question:".length));
+    }
+
+    const trimmedComment = comment.trim();
+    const resolvedTitle =
+      title.trim() ||
+      trimmedComment.split(/[.!?\n]/)[0].trim().slice(0, 80) ||
+      CATEGORY_META[category].label;
+
     try {
       const created = await professorApi.createFeedback(courseId, {
-        author_name: authorName.trim() || "Course Instructor",
+        author_name: "Course Instructor",
         category,
-        title: title.trim(),
-        comment: comment.trim(),
-        topic_id:
-          targetType === "topic" && selectedTopicId
-            ? Number(selectedTopicId)
-            : null,
-        question_id:
-          targetType === "question" && selectedQuestionId
-            ? Number(selectedQuestionId)
-            : null,
+        title: resolvedTitle,
+        comment: trimmedComment,
+        topic_id: topicId,
+        question_id: questionId,
         is_pinned: isPinned,
       });
       setTitle("");
       setComment("");
-      setStatusMessage(`Saved instructor note "${created.title}".`);
+      setStatusMessage(`Published note "${created.title}".`);
       await loadDashboard({ silent: true });
     } catch (err) {
       setError(err);
@@ -186,7 +193,7 @@ export function ProfessorWorkspace({
     setError(null);
     try {
       await professorApi.deleteFeedback(courseId, item.id);
-      setStatusMessage(`Removed note "${item.title}".`);
+      setStatusMessage(`Removed "${item.title}".`);
       await loadDashboard({ silent: true });
     } catch (err) {
       setError(err);
@@ -196,13 +203,12 @@ export function ProfessorWorkspace({
   };
 
   const prefillQuestionFeedback = (questionId: number, questionNumber: string) => {
-    setTargetType("question");
-    setSelectedQuestionId(String(questionId));
-    setCategory("coverage_gap");
+    setTargetValue(`question:${questionId}`);
+    setCategory("clarification");
     if (!title.trim()) {
-      setTitle(`Question ${questionNumber} clarification & coverage`);
+      setTitle(`Question ${questionNumber} guidance`);
     }
-    const input = document.getElementById("prof-feedback-title");
+    const input = document.getElementById("prof-feedback-comment");
     input?.focus();
     input?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
@@ -215,18 +221,11 @@ export function ProfessorWorkspace({
     return dashboard.question_coverage;
   }, [dashboard, questionFilter]);
 
-  const filteredFeedback = useMemo(() => {
-    if (!dashboard) return [];
-    if (feedbackFilter === "all") return dashboard.feedback;
-    if (feedbackFilter === "pinned") return dashboard.feedback.filter((f) => f.is_pinned);
-    return dashboard.feedback.filter((f) => f.category === feedbackFilter);
-  }, [dashboard, feedbackFilter]);
-
   if (loading && !dashboard) {
     return (
       <div className="loading">
         <span className="spinner" aria-hidden="true" />
-        <span>Loading teaching–assessment coverage &amp; feedback…</span>
+        <span>Loading teaching alignment &amp; feedback…</span>
       </div>
     );
   }
@@ -240,8 +239,13 @@ export function ProfessorWorkspace({
   }
 
   const { summary, ai_budget } = dashboard;
-  const gapsCount = summary.questions_uncovered +
-    dashboard.topic_alignment.filter((t) => t.alignment_status === "exam_heavy_gap").length;
+  const coverageRatio =
+    summary.questions_total > 0
+      ? Math.round((summary.questions_with_sources / summary.questions_total) * 100)
+      : 0;
+  const attentionCount = dashboard.question_coverage.filter(
+    (q) => q.coverage_status !== "supported"
+  ).length;
 
   return (
     <div className="professor-workspace-stack">
@@ -272,219 +276,106 @@ export function ProfessorWorkspace({
         </div>
       )}
 
-      {/* Top KPI Row matching Flashcards / Course Overview design language */}
-      <div className="summary-grid" aria-label="Course teaching alignment metrics">
-        <div className="summary-stat">
-          <span className="summary-label">Materials indexed</span>
-          <strong className="summary-value">
-            {summary.materials_ready}/{summary.materials_total}
-          </strong>
-          <span className="note" style={{ margin: 0 }}>
-            {summary.slides_count} slides · {summary.transcripts_count} transcripts · {summary.chunks_count} chunks
-          </span>
-        </div>
-
-        <div className="summary-stat">
-          <span className="summary-label">Exam evidence coverage</span>
-          <strong className="summary-value">
-            {summary.questions_with_sources}/{summary.questions_total}
-          </strong>
-          <span className="note" style={{ margin: 0 }}>
-            {summary.questions_uncovered > 0
-              ? `${summary.questions_uncovered} awaiting source linking`
-              : summary.questions_total > 0
-                ? "All past questions linked"
-                : "No past exam uploaded yet"}
-          </span>
-        </div>
-
-        <div className="summary-stat">
-          <span className="summary-label">Oral readiness average</span>
-          <strong className="summary-value">
-            {summary.avg_accuracy !== null
-              ? `${summary.avg_accuracy}/5 · ${summary.avg_completeness}/5`
-              : "—"}
-          </strong>
-          <span className="note" style={{ margin: 0 }}>
-            {summary.oral_turns_count > 0
-              ? `Accuracy · Completeness across ${summary.oral_turns_count} turn${summary.oral_turns_count === 1 ? "" : "s"}`
-              : "No oral exam turns evaluated yet"}
-          </span>
-        </div>
-
-        <div className="summary-stat">
-          <span className="summary-label">Instructor notes &amp; AI cap</span>
-          <strong className="summary-value">{summary.feedback_count}</strong>
-          <span className="note" style={{ margin: 0 }}>
-            AI spend: ${ai_budget.spent_usd.toFixed(3)} / ${ai_budget.budget_usd.toFixed(2)} cap
-          </span>
-        </div>
-      </div>
-
-      {/* Bounded Workflow Pipeline Strip */}
-      <section className="card pipeline-card" aria-label="Course pipeline status">
-        <div className="section-header" style={{ marginBottom: 14 }}>
-          <div className="section-title-group">
-            <span className="eyebrow" style={{ marginRight: 6 }}>Workflow Coordinator</span>
-            <h2>Course pipeline health</h2>
+      {/* Clean Modern Header Banner */}
+      <section className="card prof-banner" aria-label="Course teaching summary">
+        <div className="prof-banner-main">
+          <div className="prof-banner-heading">
+            <span className="eyebrow">Teaching &amp; Assessment Alignment</span>
+            <h2>Course readiness overview</h2>
           </div>
-          <span className={`badge ${ai_budget.budget_exceeded ? "status-failed" : "teal-badge"}`}>
-            <span className="badge-dot" aria-hidden="true" />
-            AI calls: {ai_budget.llm_calls + ai_budget.stt_calls} · Remaining ${ai_budget.remaining_usd.toFixed(2)}
-          </span>
+
+          <div className="prof-coverage-meter">
+            <div className="prof-coverage-meter-head">
+              <span>
+                <strong>{summary.questions_with_sources}</strong> of{" "}
+                <strong>{summary.questions_total}</strong> past-exam questions backed by lecture/slide sources
+              </span>
+              <span className="meta-chip tabular">{coverageRatio}% linked</span>
+            </div>
+            <div className="prof-progress-track" aria-hidden="true">
+              <div
+                className="prof-progress-fill"
+                style={{ width: `${coverageRatio}%` }}
+              />
+            </div>
+          </div>
         </div>
 
-        <ol className="pipeline-stepper">
-          {dashboard.pipeline.map((step, index) => {
-            const badgeClass =
-              step.status === "ready"
-                ? "status-ready"
-                : step.status === "active" || step.status === "partial"
-                  ? "status-active"
-                  : "";
-            return (
-              <li key={step.key} className={`pipeline-step is-${step.status}`}>
-                <div className="pipeline-step-head">
-                  <span className="pipeline-step-index tabular">{index + 1}</span>
-                  <span className="pipeline-step-title">{step.label}</span>
-                  <span className={`badge ${badgeClass}`} style={{ marginLeft: "auto" }}>
-                    {step.status}
-                  </span>
-                </div>
-                <p className="pipeline-step-detail">{step.detail}</p>
-              </li>
-            );
-          })}
-        </ol>
+        <div className="prof-banner-actions">
+          <div className="prof-banner-pills">
+            {summary.oral_turns_count > 0 && summary.avg_accuracy !== null && (
+              <span className="badge teal-badge" style={{ textTransform: "none" }}>
+                Oral avg {summary.avg_accuracy}/5 · {summary.oral_turns_count} turn{summary.oral_turns_count === 1 ? "" : "s"}
+              </span>
+            )}
+            <span className="meta-chip mono">
+              AI budget ${ai_budget.spent_usd.toFixed(3)} / ${ai_budget.budget_usd.toFixed(2)}
+            </span>
+          </div>
+
+          {dashboard.openrouter_available && (
+            <button
+              type="button"
+              className="btn small"
+              disabled={briefingLoading || ai_budget.budget_exceeded}
+              onClick={() => void handleGenerateBriefing()}
+            >
+              {briefingLoading ? "Synthesizing…" : "Generate AI teaching briefing"}
+            </button>
+          )}
+        </div>
       </section>
 
-      {/* Main 2-Column Professor Studio */}
-      <div className="professor-studio-grid">
-        {/* Left Column: Alignment Matrix, Question Audit, Weaknesses & AI Briefing */}
-        <div className="professor-analytics-col">
-          {/* Topic Teaching-Assessment Alignment */}
-          <section className="card">
-            <div className="section-header" style={{ marginBottom: 14 }}>
-              <div className="section-title-group">
-                <h2>Teaching–assessment topic matrix</h2>
-                <span className="count-pill">{dashboard.topic_alignment.length}</span>
-              </div>
-              {onOpenKnowledge && (
-                <button
-                  type="button"
-                  className="btn secondary small"
-                  onClick={onOpenKnowledge}
-                >
-                  Open knowledge graph
-                </button>
-              )}
+      {briefing && (
+        <section className="card prof-briefing-card" aria-label="AI Teaching Briefing">
+          <div className="section-header" style={{ marginBottom: 10 }}>
+            <div className="section-title-group">
+              <span className="badge kind-badge">AI Teaching Briefing</span>
+              <span className="note" style={{ margin: 0 }}>
+                Synthesized strictly from real course materials and oral practice gaps
+              </span>
             </div>
+          </div>
+          <p className="professor-briefing-summary">{briefing.executive_summary}</p>
+          {briefing.teaching_priorities.length > 0 && (
+            <div className="prof-priority-grid">
+              {briefing.teaching_priorities.map((p, idx) => (
+                <div key={idx} className="professor-priority-item">
+                  <strong>{p.title}</strong>
+                  <p>{p.rationale}</p>
+                  {(p.cited_question_ids.length > 0 || p.cited_topic_ids.length > 0) && (
+                    <div className="meta-row" style={{ marginTop: 8 }}>
+                      {p.cited_question_ids.map((qid) => (
+                        <span key={`q-${qid}`} className="meta-chip mono">
+                          Question #{qid}
+                        </span>
+                      ))}
+                      {p.cited_topic_ids.map((tid) => (
+                        <span key={`t-${tid}`} className="meta-chip mono">
+                          Topic #{tid}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
-            {dashboard.topic_alignment.length === 0 ? (
-              <div className="empty">
-                <span>
-                  No course topics generated yet. Generate the knowledge graph from uploaded slides and transcripts to audit topic alignment.
-                </span>
-              </div>
-            ) : (
-              <div className="coverage-table-wrap">
-                <table className="coverage-table">
-                  <thead>
-                    <tr>
-                      <th>Topic</th>
-                      <th>Teaching sources</th>
-                      <th>Exam links</th>
-                      <th>Oral gaps</th>
-                      <th>Alignment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboard.topic_alignment.map((topic) => {
-                      const statusMeta = ALIGNMENT_LABEL[topic.alignment_status] ?? {
-                        label: topic.alignment_status,
-                        className: "",
-                      };
-                      return (
-                        <tr key={topic.topic_id}>
-                          <td>
-                            <div className="coverage-topic-name">{topic.name}</div>
-                            {topic.description && (
-                              <div className="coverage-topic-desc">{topic.description}</div>
-                            )}
-                          </td>
-                          <td>
-                            <div className="meta-row" style={{ marginTop: 0 }}>
-                              <span className="meta-chip">{topic.slide_chunks} slides</span>
-                              <span className="meta-chip">{topic.transcript_chunks} lecture</span>
-                              {topic.study_chunks > 0 && (
-                                <span className="meta-chip">{topic.study_chunks} study</span>
-                              )}
-                            </div>
-                          </td>
-                          <td>
-                            {topic.linked_questions.length > 0 ? (
-                              <div className="meta-row" style={{ marginTop: 0 }}>
-                                {topic.linked_questions.map((q) =>
-                                  onOpenQuestions ? (
-                                    <button
-                                      key={q.id}
-                                      type="button"
-                                      className="meta-chip link-chip"
-                                      onClick={() => onOpenQuestions(q.id)}
-                                    >
-                                      Q{q.question_number}
-                                    </button>
-                                  ) : (
-                                    <span key={q.id} className="meta-chip">
-                                      Q{q.question_number}
-                                    </span>
-                                  )
-                                )}
-                              </div>
-                            ) : (
-                              <span className="note" style={{ margin: 0 }}>None</span>
-                            )}
-                          </td>
-                          <td className="tabular">
-                            {topic.oral_weakness_hits > 0 ? (
-                              <span className="badge status-active">
-                                {topic.oral_weakness_hits}
-                              </span>
-                            ) : (
-                              <span className="note" style={{ margin: 0 }}>0</span>
-                            )}
-                          </td>
-                          <td>
-                            <span
-                              className={`badge ${statusMeta.className}`}
-                              style={{ textTransform: "none" }}
-                            >
-                              {statusMeta.label}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* Past Exam Question Evidence Audit */}
-          <section className="card">
-            <div className="section-header" style={{ marginBottom: 14 }}>
+      {/* Main 2-Column Workspace */}
+      <div className="professor-studio-grid">
+        {/* Left Column: Modernized Question Evidence Audit & Topic/Oral Alignment */}
+        <div className="professor-analytics-col">
+          <section className="card" aria-label="Exam question evidence audit">
+            <div className="section-header" style={{ marginBottom: 16 }}>
               <div className="section-title-group">
                 <h2>Exam question evidence audit</h2>
                 <span className="count-pill">{filteredQuestions.length}</span>
-                {gapsCount > 0 && (
-                  <span className="badge status-active" style={{ textTransform: "none" }}>
-                    {summary.questions_uncovered} uncovered
-                  </span>
-                )}
               </div>
 
-              <div className="flashcards-filters" role="group" aria-label="Filter question coverage">
+              <div className="flashcards-filters" role="group" aria-label="Filter questions">
                 <button
                   type="button"
                   className={`flashcards-filter-btn${questionFilter === "all" ? " active" : ""}`}
@@ -497,8 +388,7 @@ export function ProfessorWorkspace({
                   className={`flashcards-filter-btn${questionFilter === "gaps" ? " active" : ""}`}
                   onClick={() => setQuestionFilter("gaps")}
                 >
-                  Needs attention (
-                  {dashboard.question_coverage.filter((q) => q.coverage_status !== "supported").length})
+                  Needs attention ({attentionCount})
                 </button>
               </div>
             </div>
@@ -508,7 +398,7 @@ export function ProfessorWorkspace({
                 <span>
                   {dashboard.question_coverage.length === 0
                     ? "No past-exam questions uploaded yet."
-                    : "All extracted past exam questions have strong lecture & slide evidence."}
+                    : "Every exam question has verified slide and lecture coverage."}
                 </span>
                 {dashboard.question_coverage.length === 0 && onOpenMaterials && (
                   <button
@@ -521,301 +411,311 @@ export function ProfessorWorkspace({
                 )}
               </div>
             ) : (
-              <ul className="overview-list">
+              <div className="prof-audit-list">
                 {filteredQuestions.map((q) => {
                   const parsed = splitQuestionTitleAndBody(q.text);
-                  const badgeMeta = QUESTION_STATUS_LABEL[q.coverage_status] ?? {
-                    label: q.coverage_status,
-                    className: "",
-                  };
+                  const headline =
+                    parsed.title ||
+                    (parsed.body.length > 125
+                      ? `${parsed.body.slice(0, 125)}…`
+                      : parsed.body);
                   const busy = analyzingQuestionId === q.question_id;
+                  const statusLabel =
+                    q.coverage_status === "supported"
+                      ? "Supported"
+                      : q.coverage_status === "partial"
+                        ? "Partial evidence"
+                        : "Missing evidence";
+                  const statusClass =
+                    q.coverage_status === "supported"
+                      ? "status-ready"
+                      : q.coverage_status === "partial"
+                        ? "kind-badge"
+                        : "status-active";
 
                   return (
-                    <li key={q.question_id} className="overview-list-item professor-question-row">
-                      <div className="overview-list-main">
-                        <div className="question-item-header">
+                    <article
+                      key={q.question_id}
+                      className={`prof-audit-card is-${q.coverage_status}`}
+                    >
+                      <div className="prof-audit-top">
+                        <div className="prof-audit-badges">
                           <span className="question-num-badge tabular">
                             Q{q.question_number}
                           </span>
                           <span
-                            className={`badge ${badgeMeta.className}`}
+                            className={`badge ${statusClass}`}
                             style={{ textTransform: "none" }}
                           >
-                            {badgeMeta.label}
+                            <span className="badge-dot" aria-hidden="true" />
+                            {statusLabel}
                           </span>
-                          {q.has_slides && <span className="meta-chip">Slides</span>}
-                          {q.has_transcript && <span className="meta-chip">Transcript</span>}
                           {q.feedback_count > 0 && (
                             <span className="badge teal-badge" style={{ textTransform: "none" }}>
                               {q.feedback_count} note{q.feedback_count === 1 ? "" : "s"}
                             </span>
                           )}
                         </div>
-                        <div className="overview-list-title">
-                          {parsed.title || (parsed.body.length > 130 ? `${parsed.body.slice(0, 130)}…` : parsed.body)}
+
+                        <div className="prof-audit-sources">
+                          <span className={`prof-source-pill ${q.has_slides ? "is-present" : "is-absent"}`}>
+                            {q.has_slides ? "✓ Slides" : "No slides"}
+                          </span>
+                          <span className={`prof-source-pill ${q.has_transcript ? "is-present" : "is-absent"}`}>
+                            {q.has_transcript ? "✓ Lecture" : "No lecture"}
+                          </span>
                         </div>
-                        <div className="note" style={{ margin: 0 }}>
+                      </div>
+
+                      <h3 className="prof-audit-title">{headline}</h3>
+
+                      <div className="prof-audit-footer">
+                        <span className="note" style={{ margin: 0 }}>
                           {q.material_title}
                           {q.page_number !== null ? ` · p. ${q.page_number}` : ""}
                           {" · "}
-                          {q.source_count} saved {q.source_count === 1 ? "source" : "sources"}
-                        </div>
-                      </div>
+                          {q.source_count} saved {q.source_count === 1 ? "excerpt" : "excerpts"}
+                        </span>
 
-                      <div className="actions" style={{ marginTop: 0, flexShrink: 0 }}>
-                        {q.coverage_status !== "supported" && (
-                          <button
-                            type="button"
-                            className="btn small"
-                            disabled={busy}
-                            onClick={() => void handleAnalyzeQuestion(q.question_id)}
-                          >
-                            {busy ? "Analyzing…" : "Analyze sources"}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn small secondary"
-                          onClick={() =>
-                            prefillQuestionFeedback(q.question_id, q.question_number)
-                          }
-                        >
-                          + Feedback
-                        </button>
-                        {onOpenQuestions && (
+                        <div className="actions" style={{ marginTop: 0 }}>
+                          {q.coverage_status !== "supported" && (
+                            <button
+                              type="button"
+                              className="btn small"
+                              disabled={busy}
+                              onClick={() => void handleAnalyzeQuestion(q.question_id)}
+                            >
+                              {busy ? "Linking…" : "Link sources"}
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="btn small secondary"
-                            onClick={() => onOpenQuestions(q.question_id)}
+                            onClick={() =>
+                              prefillQuestionFeedback(q.question_id, q.question_number)
+                            }
                           >
-                            Inspect
+                            Add note
                           </button>
-                        )}
+                          {onOpenQuestions && (
+                            <button
+                              type="button"
+                              className="btn small secondary"
+                              onClick={() => onOpenQuestions(q.question_id)}
+                            >
+                              Inspect
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </li>
+                    </article>
                   );
                 })}
-              </ul>
+              </div>
             )}
           </section>
 
-          {/* Student Weaknesses from Oral Practice + AI Teaching Briefing */}
-          <section className="card">
+          {/* Topic Alignment & Oral Practice Gaps Card */}
+          <section className="card" aria-label="Topics and student weaknesses">
             <div className="section-header" style={{ marginBottom: 14 }}>
               <div className="section-title-group">
-                <h2>Oral practice gaps &amp; teaching briefing</h2>
-                <span className="count-pill">{dashboard.recurring_weaknesses.length}</span>
+                <h2>Topic coverage &amp; oral gaps</h2>
+                <span className="count-pill">{dashboard.topic_alignment.length}</span>
               </div>
               <div className="actions" style={{ marginTop: 0 }}>
+                {onOpenKnowledge && (
+                  <button
+                    type="button"
+                    className="btn small secondary"
+                    onClick={onOpenKnowledge}
+                  >
+                    Knowledge graph
+                  </button>
+                )}
                 {onOpenOral && (
                   <button
                     type="button"
                     className="btn small secondary"
                     onClick={onOpenOral}
                   >
-                    Open oral exam
-                  </button>
-                )}
-                {dashboard.openrouter_available && (
-                  <button
-                    type="button"
-                    className="btn small"
-                    disabled={briefingLoading || ai_budget.budget_exceeded}
-                    onClick={() => void handleGenerateBriefing()}
-                  >
-                    {briefingLoading ? "Synthesizing…" : "Generate AI briefing"}
+                    Oral exam
                   </button>
                 )}
               </div>
             </div>
 
-            {briefing && (
-              <div className="professor-briefing-box">
-                <div className="section-title-group" style={{ marginBottom: 8 }}>
-                  <span className="badge teal-badge">AI Teaching Briefing</span>
-                  <span className="note" style={{ margin: 0 }}>
-                    Grounded strictly in verified course coverage &amp; oral gaps
-                  </span>
-                </div>
-                <p className="professor-briefing-summary">{briefing.executive_summary}</p>
-                {briefing.teaching_priorities.length > 0 && (
-                  <ul className="professor-priority-list">
-                    {briefing.teaching_priorities.map((p, idx) => (
-                      <li key={idx} className="professor-priority-item">
-                        <strong>{p.title}</strong>
-                        <p>{p.rationale}</p>
-                        {(p.cited_question_ids.length > 0 || p.cited_topic_ids.length > 0) && (
-                          <div className="meta-row" style={{ marginTop: 6 }}>
-                            {p.cited_question_ids.map((qid) => (
-                              <span key={`q-${qid}`} className="meta-chip mono">
-                                Question #{qid}
-                              </span>
-                            ))}
-                            {p.cited_topic_ids.map((tid) => (
-                              <span key={`t-${tid}`} className="meta-chip mono">
-                                Topic #{tid}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            {dashboard.recurring_weaknesses.length === 0 ? (
+            {dashboard.topic_alignment.length === 0 ? (
               <div className="empty">
                 <span>
-                  No missing concepts reported from oral exam sessions yet. Real weaknesses appear here automatically as oral exams complete.
+                  Generate topics in Knowledge graph to compare lecture coverage against past exam questions.
                 </span>
               </div>
             ) : (
-              <ul className="overview-list">
-                {dashboard.recurring_weaknesses.map((item, idx) => (
-                  <li key={idx} className="overview-list-item">
-                    <div className="overview-list-main">
-                      <div className="question-item-header">
-                        <span className="badge status-active" style={{ textTransform: "none" }}>
-                          {item.occurrences} session{item.occurrences === 1 ? "" : "s"}
-                        </span>
-                        {item.question_numbers.map((qn) => (
-                          <span key={qn} className="meta-chip">
-                            Q{qn}
+              <div className="prof-topics-grid">
+                {dashboard.topic_alignment.map((topic) => {
+                  const statusMeta = ALIGNMENT_LABEL[topic.alignment_status] ?? {
+                    label: topic.alignment_status,
+                    className: "",
+                  };
+                  return (
+                    <div key={topic.topic_id} className="prof-topic-row">
+                      <div className="prof-topic-info">
+                        <div className="prof-topic-head">
+                          <strong>{topic.name}</strong>
+                          <span
+                            className={`badge ${statusMeta.className}`}
+                            style={{ textTransform: "none" }}
+                          >
+                            {statusMeta.label}
                           </span>
-                        ))}
-                      </div>
-                      <div className="overview-list-title">{item.concept}</div>
-                      {item.revision_sources.length > 0 && (
-                        <div className="meta-row" style={{ marginTop: 4 }}>
-                          {item.revision_sources.map((src) => {
-                            const range = formatTimestampRange(src.start_seconds, src.end_seconds);
-                            return (
-                              <span key={src.chunk_id} className="meta-chip mono">
-                                {src.material_title}
-                                {src.page_number !== null ? ` · p. ${src.page_number}` : ""}
-                                {range ? ` · ${range}` : ""}
-                              </span>
-                            );
-                          })}
                         </div>
-                      )}
+                        <div className="meta-row" style={{ marginTop: 6 }}>
+                          <span className="meta-chip">{topic.slide_chunks} slides</span>
+                          <span className="meta-chip">{topic.transcript_chunks} lecture</span>
+                          {topic.study_chunks > 0 && (
+                            <span className="meta-chip">{topic.study_chunks} study</span>
+                          )}
+                          {topic.linked_questions.map((q) =>
+                            onOpenQuestions ? (
+                              <button
+                                key={q.id}
+                                type="button"
+                                className="meta-chip link-chip"
+                                onClick={() => onOpenQuestions(q.id)}
+                              >
+                                Q{q.question_number}
+                              </button>
+                            ) : (
+                              <span key={q.id} className="meta-chip">
+                                Q{q.question_number}
+                              </span>
+                            )
+                          )}
+                          {topic.oral_weakness_hits > 0 && (
+                            <span className="badge status-active" style={{ textTransform: "none" }}>
+                              {topic.oral_weakness_hits} oral gap{topic.oral_weakness_hits === 1 ? "" : "s"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
+            )}
+
+            {dashboard.recurring_weaknesses.length > 0 && (
+              <div className="prof-weakness-subsection">
+                <div className="section-title-group" style={{ marginBottom: 10 }}>
+                  <span className="eyebrow">Observed in Oral Practice</span>
+                </div>
+                <ul className="overview-list">
+                  {dashboard.recurring_weaknesses.map((item, idx) => (
+                    <li key={idx} className="overview-list-item">
+                      <div className="overview-list-main">
+                        <div className="question-item-header">
+                          <span className="badge status-active" style={{ textTransform: "none" }}>
+                            Missed {item.occurrences}×
+                          </span>
+                          {item.question_numbers.map((qn) => (
+                            <span key={qn} className="meta-chip">
+                              Q{qn}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="overview-list-title">{item.concept}</div>
+                        {item.revision_sources.length > 0 && (
+                          <div className="meta-row" style={{ marginTop: 4 }}>
+                            {item.revision_sources.map((src) => {
+                              const range = formatTimestampRange(src.start_seconds, src.end_seconds);
+                              return (
+                                <span key={src.chunk_id} className="meta-chip mono">
+                                  {src.material_title}
+                                  {src.page_number !== null ? ` · p. ${src.page_number}` : ""}
+                                  {range ? ` · ${range}` : ""}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </section>
         </div>
 
-        {/* Right Column: Professor Feedback & Rubric Guidance Studio */}
+        {/* Right Column: Simplified Professor Feedback Composer & Notes */}
         <div className="professor-feedback-col">
-          <section className="card">
-            <span className="eyebrow">Instructor Guidance</span>
-            <h2 style={{ marginTop: 4, marginBottom: 8 }}>Leave professor feedback</h2>
-            <p className="note" style={{ marginTop: 0, marginBottom: 14 }}>
-              Publish real grading rubrics, emphasis notes, or concept clarifications. Pinned notes surface directly beside matching exam questions and oral practice prompts.
+          <section className="card prof-composer-card">
+            <span className="eyebrow">For Students</span>
+            <h2 style={{ marginTop: 4, marginBottom: 6 }}>Leave feedback</h2>
+            <p className="note" style={{ marginTop: 0, marginBottom: 16 }}>
+              Share exam focus, grading expectations, or quick clarifications. Notes show up right beside matching questions.
             </p>
 
             <form onSubmit={(e) => void handleSubmitFeedback(e)}>
-              <div className="professor-form-row">
-                <div className="field">
-                  <label htmlFor="prof-author">Instructor label</label>
-                  <input
-                    id="prof-author"
-                    type="text"
-                    maxLength={80}
-                    value={authorName}
-                    onChange={(e) => setAuthorName(e.target.value)}
-                    placeholder="e.g. Prof. Rossi"
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="prof-category">Category</label>
-                  <select
-                    id="prof-category"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as ProfessorFeedbackCategory)}
-                  >
-                    <option value="rubric_note">Rubric &amp; grading note</option>
-                    <option value="emphasis">Exam emphasis</option>
-                    <option value="clarification">Concept clarification</option>
-                    <option value="coverage_gap">Coverage gap</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="professor-form-row">
-                <div className="field">
-                  <label htmlFor="prof-target-type">Applies to</label>
-                  <select
-                    id="prof-target-type"
-                    value={targetType}
-                    onChange={(e) =>
-                      setTargetType(e.target.value as "course" | "topic" | "question")
-                    }
-                  >
-                    <option value="course">Whole course</option>
-                    <option value="question">Specific exam question</option>
-                    <option value="topic">Specific topic</option>
-                  </select>
-                </div>
-
-                {targetType === "question" && (
-                  <div className="field">
-                    <label htmlFor="prof-question">Exam question</label>
-                    <select
-                      id="prof-question"
-                      required
-                      value={selectedQuestionId}
-                      onChange={(e) => setSelectedQuestionId(e.target.value)}
-                    >
-                      <option value="">Select question…</option>
+              <div className="field">
+                <label htmlFor="prof-unified-target">1. Where should this appear?</label>
+                <select
+                  id="prof-unified-target"
+                  value={targetValue}
+                  onChange={(e) => setTargetValue(e.target.value)}
+                >
+                  <option value="course">Entire course (Overview &amp; study workspace)</option>
+                  {dashboard.question_coverage.length > 0 && (
+                    <optgroup label="Specific exam question">
                       {dashboard.question_coverage.map((q) => (
-                        <option key={q.question_id} value={q.question_id}>
-                          Q{q.question_number} — {q.text.slice(0, 64)}
+                        <option key={`q-${q.question_id}`} value={`question:${q.question_id}`}>
+                          Question {q.question_number} — {q.text.slice(0, 56)}
                         </option>
                       ))}
-                    </select>
-                  </div>
-                )}
-
-                {targetType === "topic" && (
-                  <div className="field">
-                    <label htmlFor="prof-topic">Course topic</label>
-                    <select
-                      id="prof-topic"
-                      required
-                      value={selectedTopicId}
-                      onChange={(e) => setSelectedTopicId(e.target.value)}
-                    >
-                      <option value="">Select topic…</option>
+                    </optgroup>
+                  )}
+                  {dashboard.topic_alignment.length > 0 && (
+                    <optgroup label="Specific topic">
                       {dashboard.topic_alignment.map((t) => (
-                        <option key={t.topic_id} value={t.topic_id}>
-                          {t.name}
+                        <option key={`t-${t.topic_id}`} value={`topic:${t.topic_id}`}>
+                          Topic: {t.name}
                         </option>
                       ))}
-                    </select>
-                  </div>
-                )}
+                    </optgroup>
+                  )}
+                </select>
               </div>
 
               <div className="field">
-                <label htmlFor="prof-feedback-title">Headline</label>
+                <label>2. Type of feedback</label>
+                <div className="prof-type-pills" role="radiogroup" aria-label="Feedback type">
+                  {NOTE_TYPE_OPTIONS.slice(0, 3).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`prof-type-pill${category === opt.value ? " active" : ""}`}
+                      onClick={() => setCategory(opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="field">
+                <label htmlFor="prof-feedback-title">Headline (optional)</label>
                 <input
                   id="prof-feedback-title"
                   type="text"
-                  required
                   maxLength={160}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Strict 2PL is tested for cascading abort prevention"
+                  placeholder="e.g. Focus on strict 2PL and cascading aborts"
                 />
               </div>
 
               <div className="field">
-                <label htmlFor="prof-feedback-comment">Feedback / guidance</label>
+                <label htmlFor="prof-feedback-comment">3. Your guidance for students</label>
                 <textarea
                   id="prof-feedback-comment"
                   rows={4}
@@ -823,122 +723,112 @@ export function ProfessorWorkspace({
                   maxLength={2000}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="Share exact rubric expectations, slide omissions, or follow-up hints…"
+                  placeholder="Write what students should pay attention to, common grading pitfalls, or missing slide details…"
                 />
               </div>
 
-              <label className="professor-pin-toggle">
-                <input
-                  type="checkbox"
-                  checked={isPinned}
-                  onChange={(e) => setIsPinned(e.target.checked)}
-                />
-                <span>Pin note to student Exam questions &amp; Overview</span>
-              </label>
+              <div className="prof-composer-footer">
+                <label className="professor-pin-toggle" style={{ margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={isPinned}
+                    onChange={(e) => setIsPinned(e.target.checked)}
+                  />
+                  <span>Pin to course overview</span>
+                </label>
 
-              <button
-                type="submit"
-                className="btn full"
-                disabled={savingFeedback || !title.trim() || !comment.trim()}
-              >
-                {savingFeedback ? "Saving feedback…" : "Publish instructor feedback"}
-              </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={savingFeedback || comment.trim().length < 4}
+                >
+                  {savingFeedback ? "Posting…" : "Post feedback"}
+                </button>
+              </div>
             </form>
           </section>
 
           <section className="card">
             <div className="section-header" style={{ marginBottom: 12 }}>
               <div className="section-title-group">
-                <h2>Published feedback</h2>
-                <span className="count-pill">{filteredFeedback.length}</span>
+                <h2>Posted feedback</h2>
+                <span className="count-pill">{dashboard.feedback.length}</span>
               </div>
             </div>
 
-            <div className="flashcards-filters" style={{ marginBottom: 14 }}>
-              {(
-                [
-                  ["all", "All"],
-                  ["pinned", "Pinned"],
-                  ["rubric_note", "Rubric"],
-                  ["emphasis", "Emphasis"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`flashcards-filter-btn${feedbackFilter === key ? " active" : ""}`}
-                  onClick={() => setFeedbackFilter(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {filteredFeedback.length === 0 ? (
+            {dashboard.feedback.length === 0 ? (
               <div className="empty">
-                <span>No instructor feedback notes yet. Add a rubric or emphasis note above.</span>
+                <span>
+                  No feedback posted yet. Write your first note above and it will appear for students immediately.
+                </span>
               </div>
             ) : (
               <ul className="professor-feedback-feed">
-                {filteredFeedback.map((item) => (
-                  <li
-                    key={item.id}
-                    className={`professor-feedback-item${item.is_pinned ? " is-pinned" : ""}`}
-                  >
-                    <div className="question-item-header">
-                      <span
-                        className={`badge ${CATEGORY_BADGE_CLASS[item.category]}`}
-                        style={{ textTransform: "none" }}
-                      >
-                        {CATEGORY_LABELS[item.category]}
-                      </span>
-                      {item.is_pinned && (
-                        <span className="badge teal-badge">Pinned</span>
-                      )}
-                      {item.question_number && (
-                        <button
-                          type="button"
-                          className="meta-chip link-chip"
-                          onClick={() =>
-                            item.question_id && onOpenQuestions?.(item.question_id)
-                          }
+                {dashboard.feedback.map((item) => {
+                  const meta = CATEGORY_META[item.category] ?? {
+                    label: item.category,
+                    badgeClass: "",
+                  };
+                  return (
+                    <li
+                      key={item.id}
+                      className={`professor-feedback-item${item.is_pinned ? " is-pinned" : ""}`}
+                    >
+                      <div className="question-item-header">
+                        <span
+                          className={`badge ${meta.badgeClass}`}
+                          style={{ textTransform: "none" }}
                         >
-                          Q{item.question_number}
-                        </button>
-                      )}
-                      {item.topic_name && (
-                        <span className="meta-chip">{item.topic_name}</span>
-                      )}
-                    </div>
-
-                    <h3 className="professor-feedback-title">{item.title}</h3>
-                    <p className="professor-feedback-body">{item.comment}</p>
-
-                    <div className="professor-feedback-footer">
-                      <span className="note" style={{ margin: 0 }}>
-                        {item.author_name} · {new Date(item.created_at).toLocaleDateString()}
-                      </span>
-                      <div className="actions" style={{ marginTop: 0 }}>
-                        <button
-                          type="button"
-                          className="btn small secondary"
-                          disabled={busyFeedbackId === item.id}
-                          onClick={() => void togglePin(item)}
-                        >
-                          {item.is_pinned ? "Unpin" : "Pin"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn small danger-outline"
-                          disabled={busyFeedbackId === item.id}
-                          onClick={() => void deleteFeedback(item)}
-                        >
-                          Remove
-                        </button>
+                          {meta.label}
+                        </span>
+                        {item.is_pinned && (
+                          <span className="badge teal-badge">Pinned</span>
+                        )}
+                        {item.question_number && (
+                          <button
+                            type="button"
+                            className="meta-chip link-chip"
+                            onClick={() =>
+                              item.question_id && onOpenQuestions?.(item.question_id)
+                            }
+                          >
+                            Q{item.question_number}
+                          </button>
+                        )}
+                        {item.topic_name && (
+                          <span className="meta-chip">{item.topic_name}</span>
+                        )}
                       </div>
-                    </div>
-                  </li>
-                ))}
+
+                      <h3 className="professor-feedback-title">{item.title}</h3>
+                      <p className="professor-feedback-body">{item.comment}</p>
+
+                      <div className="professor-feedback-footer">
+                        <span className="note" style={{ margin: 0 }}>
+                          {new Date(item.created_at).toLocaleDateString()}
+                        </span>
+                        <div className="actions" style={{ marginTop: 0 }}>
+                          <button
+                            type="button"
+                            className="btn small secondary"
+                            disabled={busyFeedbackId === item.id}
+                            onClick={() => void togglePin(item)}
+                          >
+                            {item.is_pinned ? "Unpin" : "Pin"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn small danger-outline"
+                            disabled={busyFeedbackId === item.id}
+                            onClick={() => void deleteFeedback(item)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
