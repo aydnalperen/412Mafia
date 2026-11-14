@@ -63,7 +63,7 @@ function FlashcardPrompt({
   );
 }
 
-function FlashcardSourceFooter({ card }: { card: Flashcard }) {
+function FlashcardSourceMeta({ card }: { card: Flashcard }) {
   const timeRange = formatTimestampRange(
     card.source.start_seconds,
     card.source.end_seconds
@@ -125,7 +125,11 @@ export function FlashcardsWorkspace({
     knowledgeApi
       .get(courseId)
       .then((graph) => {
-        if (active) setTopics(graph.topics);
+        if (!active) return;
+        setTopics(graph.topics);
+        if (graph.topics.length > 0) {
+          setTopicId((prev) => prev || String(graph.topics[0].id));
+        }
       })
       .catch((err: unknown) => {
         if (active) setTopicError(apiErrorMessage(err));
@@ -216,108 +220,202 @@ export function FlashcardsWorkspace({
     visibleCards.length > 0 ? visibleCards[safeDeckIndex] : null;
 
   return (
-    <div className="overview-stack">
-      <section className="card flashcards-controls-card">
-        <div className="overview-section-header" style={{ marginBottom: 14 }}>
-          <div>
-            <p className="eyebrow">Active Recall</p>
-            <h2>Generate source-backed flashcards</h2>
-          </div>
-          {oralSession ? (
-            <button
-              className="btn small"
-              type="button"
-              disabled={cards === null || pending}
-              onClick={() => void generate({ oral_session_id: oralSession })}
-            >
-              Generate from missed concepts
-            </button>
-          ) : onOpenOral ? (
-            <button
-              type="button"
-              className="btn small secondary"
-              onClick={onOpenOral}
-            >
-              Open oral exam report
-            </button>
-          ) : (
-            <a className="btn small secondary" href={`/courses/${courseId}/oral`}>
-              Open oral exam report
-            </a>
+    <section className="card flashcards-studio" aria-label="Flashcards studio">
+      <div className="flashcards-studio-header">
+        <div className="flashcards-studio-title">
+          <p className="eyebrow">Active Recall</p>
+          <h2>Flashcards</h2>
+          {cards && cards.length > 0 && (
+            <div className="flashcards-inline-stats">
+              <span className="course-stat-pill">
+                <strong>{cards.length}</strong> cards
+              </span>
+              <span className="course-stat-pill">
+                <strong>{knownCount}</strong> known ({masteryPercent}%)
+              </span>
+              {reviewAgainCount > 0 && (
+                <span className="course-stat-pill">
+                  <strong>{reviewAgainCount}</strong> review again
+                </span>
+              )}
+            </div>
           )}
         </div>
 
-        {topics && topics.length > 0 ? (
-          <form
-            className="flashcards-generate-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (cards !== null && !pending && topicId) {
-                void generate({ topic_id: Number(topicId) });
-              }
-            }}
-          >
-            <div className="field flashcards-topic-field">
-              <label htmlFor="flashcard-topic">Topic</label>
+        <div className="flashcards-studio-controls">
+          {topics && topics.length > 0 && (
+            <form
+              className="flashcards-generate-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (cards !== null && !pending && topicId) {
+                  void generate({ topic_id: Number(topicId) });
+                }
+              }}
+            >
+              <label htmlFor="flashcard-topic" className="flashcards-topic-label">
+                Topic
+              </label>
               <select
                 id="flashcard-topic"
+                className="flashcards-topic-select"
                 value={topicId}
                 onChange={(event) => setTopicId(event.target.value)}
               >
-                <option value="">Choose a topic</option>
+                <option value="">Choose a topic…</option>
                 {topics.map((topic) => (
                   <option key={topic.id} value={topic.id}>
                     {topic.name}
                   </option>
                 ))}
               </select>
-            </div>
-            <button
-              className="btn"
-              type="submit"
-              disabled={cards === null || pending || !topicId}
-            >
-              {pending ? "Generating…" : "Generate flashcards"}
-            </button>
-          </form>
-        ) : topics?.length === 0 ? (
-          <p className="note" style={{ margin: 0 }}>
-            Generate sourced topics in the{" "}
-            {onOpenKnowledge ? (
               <button
-                type="button"
-                className="link"
-                style={{ background: "none", border: "none", padding: 0 }}
-                onClick={onOpenKnowledge}
+                className="btn small"
+                type="submit"
+                disabled={cards === null || pending || !topicId}
               >
-                knowledge graph
+                {pending ? "Generating…" : "Generate flashcards"}
               </button>
-            ) : (
-              <a className="link" href={`/courses/${courseId}/knowledge`}>
-                knowledge graph
-              </a>
-            )}{" "}
-            first.
-          </p>
-        ) : null}
+            </form>
+          )}
 
-        {topicError && (
-          <p role="alert" className="error" style={{ marginTop: 12 }}>
-            {topicError}
-          </p>
-        )}
-      </section>
-
-      {status && (
-        <div role="status" className="callout-info">
-          <span>{status}</span>
+          {oralSession ? (
+            <button
+              className="btn secondary small"
+              type="button"
+              disabled={cards === null || pending}
+              onClick={() => void generate({ oral_session_id: oralSession })}
+            >
+              From missed concepts
+            </button>
+          ) : onOpenOral ? (
+            <button
+              type="button"
+              className="btn secondary small"
+              onClick={onOpenOral}
+            >
+              Open oral exam report
+            </button>
+          ) : (
+            <a
+              className="btn secondary small"
+              href={`/courses/${courseId}/oral`}
+            >
+              Open oral exam report
+            </a>
+          )}
         </div>
+      </div>
+
+      {topics?.length === 0 && (
+        <p className="note" style={{ margin: 0 }}>
+          Generate sourced topics in the{" "}
+          {onOpenKnowledge ? (
+            <button
+              type="button"
+              className="link"
+              style={{ background: "none", border: "none", padding: 0 }}
+              onClick={onOpenKnowledge}
+            >
+              knowledge graph
+            </button>
+          ) : (
+            <a className="link" href={`/courses/${courseId}/knowledge`}>
+              knowledge graph
+            </a>
+          )}{" "}
+          first to generate topic flashcards.
+        </p>
+      )}
+
+      {topicError && (
+        <p role="alert" className="error" style={{ margin: 0 }}>
+          {topicError}
+        </p>
       )}
 
       {error && (
-        <p role="alert" className="error">
+        <p role="alert" className="error" style={{ margin: 0 }}>
           {error}
         </p>
+      )}
+
+      {cards && cards.length > 0 && (
+        <>
+          <div className="flashcards-progress-track" aria-hidden="true">
+            <div
+              className="flashcards-progress-fill"
+              style={{ width: `${masteryPercent}%` }}
+            />
+          </div>
+
+          <div className="flashcards-studio-toolbar">
+            <div
+              className="flashcards-filters"
+              role="group"
+              aria-label="Filter flashcards"
+            >
+              <button
+                type="button"
+                className={`flashcard-filter-btn${filter === "all" ? " active" : ""}`}
+                onClick={() => {
+                  setFilter("all");
+                  setDeckIndex(0);
+                }}
+              >
+                All ({cards.length})
+              </button>
+              <button
+                type="button"
+                className={`flashcard-filter-btn${filter === "to_review" ? " active" : ""}`}
+                onClick={() => {
+                  setFilter("to_review");
+                  setDeckIndex(0);
+                }}
+              >
+                To study ({toReviewCount})
+              </button>
+              <button
+                type="button"
+                className={`flashcard-filter-btn${filter === "known" ? " active" : ""}`}
+                onClick={() => {
+                  setFilter("known");
+                  setDeckIndex(0);
+                }}
+              >
+                Known ({knownCount})
+              </button>
+            </div>
+
+            <div className="flashcards-toolbar-right">
+              {status && (
+                <span role="status" className="flashcards-status-pill">
+                  {status}
+                </span>
+              )}
+              <div
+                className="flashcards-filters"
+                role="group"
+                aria-label="Flashcards layout"
+              >
+                <button
+                  type="button"
+                  className={`flashcard-filter-btn${viewMode === "deck" ? " active" : ""}`}
+                  onClick={() => setViewMode("deck")}
+                >
+                  Study deck
+                </button>
+                <button
+                  type="button"
+                  className={`flashcard-filter-btn${viewMode === "grid" ? " active" : ""}`}
+                  onClick={() => setViewMode("grid")}
+                >
+                  All cards
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {cards === null && !error && (
@@ -331,285 +429,202 @@ export function FlashcardsWorkspace({
         <div className="empty">
           <strong>No flashcards yet</strong>
           <p className="note" style={{ margin: 0 }}>
-            Choose a course topic above or finish an oral exam report to turn
-            missed concepts into study cards.
+            Select a topic above and click <strong>Generate flashcards</strong>{" "}
+            to start studying right here.
           </p>
         </div>
       )}
 
-      {cards && cards.length > 0 && (
-        <>
-          <section className="card flashcards-summary" aria-label="Study progress">
-            <div className="flashcards-summary-top">
-              <div className="flashcards-stats">
-                <span className="course-stat-pill">
-                  <strong>{cards.length}</strong> total
+      {cards && cards.length > 0 && visibleCards.length === 0 && (
+        <div className="empty">
+          <span>No flashcards match this filter.</span>
+        </div>
+      )}
+
+      {cards && cards.length > 0 && viewMode === "deck" && activeCard && (
+        <div className="flashcard-deck-stage" aria-label="Study card">
+          <div className="flashcard-deck-surface">
+            <div className="flashcard-card-top">
+              <div className="actions">
+                <span className="question-num-badge tabular">
+                  Card {safeDeckIndex + 1} / {visibleCards.length}
                 </span>
-                <span className="course-stat-pill">
-                  <strong>{knownCount}</strong> known ({masteryPercent}%)
-                </span>
-                <span className="course-stat-pill">
-                  <strong>{reviewAgainCount}</strong> review again
+                <span
+                  className={`badge ${
+                    activeCard.review_state === "known"
+                      ? "status-ready"
+                      : activeCard.review_state === "review_again"
+                        ? "status-active"
+                        : ""
+                  }`}
+                >
+                  <span className="badge-dot" aria-hidden="true" />
+                  {activeCard.review_state === "new"
+                    ? "New"
+                    : RATINGS[activeCard.review_state]}
                 </span>
               </div>
-
-              <div className="flashcards-toolbar-right">
-                <div
-                  className="flashcards-filters"
-                  role="group"
-                  aria-label="Filter flashcards"
-                >
-                  <button
-                    type="button"
-                    className={`flashcard-filter-btn${filter === "all" ? " active" : ""}`}
-                    onClick={() => {
-                      setFilter("all");
-                      setDeckIndex(0);
-                    }}
-                  >
-                    All ({cards.length})
-                  </button>
-                  <button
-                    type="button"
-                    className={`flashcard-filter-btn${filter === "to_review" ? " active" : ""}`}
-                    onClick={() => {
-                      setFilter("to_review");
-                      setDeckIndex(0);
-                    }}
-                  >
-                    To study ({toReviewCount})
-                  </button>
-                  <button
-                    type="button"
-                    className={`flashcard-filter-btn${filter === "known" ? " active" : ""}`}
-                    onClick={() => {
-                      setFilter("known");
-                      setDeckIndex(0);
-                    }}
-                  >
-                    Known ({knownCount})
-                  </button>
-                </div>
-
-                <div
-                  className="flashcards-filters"
-                  role="group"
-                  aria-label="Flashcards layout"
-                >
-                  <button
-                    type="button"
-                    className={`flashcard-filter-btn${viewMode === "deck" ? " active" : ""}`}
-                    onClick={() => setViewMode("deck")}
-                  >
-                    Study deck
-                  </button>
-                  <button
-                    type="button"
-                    className={`flashcard-filter-btn${viewMode === "grid" ? " active" : ""}`}
-                    onClick={() => setViewMode("grid")}
-                  >
-                    All cards
-                  </button>
-                </div>
-              </div>
+              <FlashcardSourceMeta card={activeCard} />
             </div>
 
-            <div className="flashcards-progress-track" aria-hidden="true">
-              <div
-                className="flashcards-progress-fill"
-                style={{ width: `${masteryPercent}%` }}
+            <div className="flashcard-deck-body">
+              <span className="flashcard-side-label">Prompt</span>
+              <FlashcardPrompt
+                front={activeCard.front}
+                back={activeCard.back}
+                revealed={!!revealedIds[activeCard.id]}
               />
             </div>
-          </section>
 
-          {visibleCards.length === 0 ? (
-            <div className="empty">
-              <span>No flashcards match this filter.</span>
-            </div>
-          ) : viewMode === "deck" && activeCard ? (
-            <section className="flashcard-deck-stage" aria-label="Study card">
-              <div className="card flashcard-deck-card">
-                <div className="flashcard-card-top">
-                  <div className="actions">
-                    <span className="question-num-badge tabular">
-                      Card {safeDeckIndex + 1} / {visibleCards.length}
-                    </span>
-                    <span
-                      className={`badge ${
-                        activeCard.review_state === "known"
-                          ? "status-ready"
-                          : activeCard.review_state === "review_again"
-                            ? "status-active"
-                            : ""
-                      }`}
-                    >
-                      <span className="badge-dot" aria-hidden="true" />
-                      {activeCard.review_state === "new"
-                        ? "New"
-                        : RATINGS[activeCard.review_state]}
-                    </span>
-                  </div>
-                  <FlashcardSourceFooter card={activeCard} />
-                </div>
-
-                <div className="flashcard-deck-body">
-                  <span className="flashcard-side-label">Prompt</span>
-                  <FlashcardPrompt
-                    front={activeCard.front}
-                    back={activeCard.back}
-                    revealed={!!revealedIds[activeCard.id]}
-                  />
-                </div>
-
-                {revealedIds[activeCard.id] && (
-                  <div className="flashcard-answer-panel">
-                    <span className="flashcard-answer-label">Answer</span>
-                    <p className="flashcard-answer-text">{activeCard.back}</p>
-                  </div>
-                )}
-
-                <div className="flashcard-deck-footer">
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="btn secondary small"
-                      disabled={visibleCards.length <= 1}
-                      onClick={() =>
-                        setDeckIndex(
-                          (idx) =>
-                            (idx - 1 + visibleCards.length) %
-                            visibleCards.length
-                        )
-                      }
-                    >
-                      &larr; Previous
-                    </button>
-                    <button
-                      type="button"
-                      className="btn secondary small"
-                      onClick={() => toggleReveal(activeCard.id)}
-                    >
-                      {revealedIds[activeCard.id]
-                        ? "Hide answer"
-                        : "Show answer"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn secondary small"
-                      disabled={visibleCards.length <= 1}
-                      onClick={() =>
-                        setDeckIndex((idx) => (idx + 1) % visibleCards.length)
-                      }
-                    >
-                      Next &rarr;
-                    </button>
-                  </div>
-
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="btn secondary small flashcard-rate-btn review_again"
-                      disabled={pending}
-                      aria-pressed={activeCard.review_state === "review_again"}
-                      onClick={() =>
-                        void review(activeCard.id, "review_again", {
-                          advanceDeck: true,
-                          visibleCount: visibleCards.length,
-                        })
-                      }
-                    >
-                      Review Again
-                    </button>
-                    <button
-                      type="button"
-                      className="btn secondary small flashcard-rate-btn known"
-                      disabled={pending}
-                      aria-pressed={activeCard.review_state === "known"}
-                      onClick={() =>
-                        void review(activeCard.id, "known", {
-                          advanceDeck: true,
-                          visibleCount: visibleCards.length,
-                        })
-                      }
-                    >
-                      Known
-                    </button>
-                  </div>
-                </div>
+            {revealedIds[activeCard.id] && (
+              <div className="flashcard-answer-panel">
+                <span className="flashcard-answer-label">Answer</span>
+                <p className="flashcard-answer-text">{activeCard.back}</p>
               </div>
-            </section>
-          ) : (
-            <ul className="course-list flashcards-grid">
-              {visibleCards.map((card, idx) => {
-                const isRevealed = !!revealedIds[card.id];
-                const stateClass =
-                  card.review_state === "known"
-                    ? "status-ready"
-                    : card.review_state === "review_again"
-                      ? "status-active"
-                      : "";
-                return (
-                  <li key={card.id} className="card flashcard-card">
-                    <div className="flashcard-card-top">
-                      <div className="actions">
-                        <span className="question-num-badge tabular">
-                          #{idx + 1}
-                        </span>
-                        <span className={`badge ${stateClass}`}>
-                          <span className="badge-dot" aria-hidden="true" />
-                          {card.review_state === "new"
-                            ? "New"
-                            : RATINGS[card.review_state]}
-                        </span>
-                      </div>
-                      <FlashcardSourceFooter card={card} />
-                    </div>
+            )}
 
-                    <div className="flashcard-prompt">
-                      <FlashcardPrompt
-                        front={card.front}
-                        back={card.back}
-                        revealed={isRevealed}
-                      />
-                    </div>
+            <div className="flashcard-deck-footer">
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  disabled={visibleCards.length <= 1}
+                  onClick={() =>
+                    setDeckIndex(
+                      (idx) =>
+                        (idx - 1 + visibleCards.length) % visibleCards.length
+                    )
+                  }
+                >
+                  &larr; Previous
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  onClick={() => toggleReveal(activeCard.id)}
+                >
+                  {revealedIds[activeCard.id] ? "Hide answer" : "Show answer"}
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  disabled={visibleCards.length <= 1}
+                  onClick={() =>
+                    setDeckIndex((idx) => (idx + 1) % visibleCards.length)
+                  }
+                >
+                  Next &rarr;
+                </button>
+              </div>
 
-                    {isRevealed && (
-                      <div className="flashcard-answer-panel">
-                        <span className="flashcard-answer-label">Answer</span>
-                        <p className="flashcard-answer-text">{card.back}</p>
-                      </div>
-                    )}
-
-                    <div className="flashcard-card-actions">
-                      <button
-                        type="button"
-                        className="btn secondary small"
-                        onClick={() => toggleReveal(card.id)}
-                      >
-                        {isRevealed ? "Hide answer" : "Show answer"}
-                      </button>
-                      <div className="actions">
-                        {(["review_again", "known"] as const).map((rating) => (
-                          <button
-                            key={rating}
-                            type="button"
-                            className={`btn secondary small flashcard-rate-btn ${rating}`}
-                            disabled={pending}
-                            aria-pressed={card.review_state === rating}
-                            onClick={() => void review(card.id, rating)}
-                          >
-                            {RATINGS[rating]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn secondary small flashcard-rate-btn review_again"
+                  disabled={pending}
+                  aria-pressed={activeCard.review_state === "review_again"}
+                  onClick={() =>
+                    void review(activeCard.id, "review_again", {
+                      advanceDeck: true,
+                      visibleCount: visibleCards.length,
+                    })
+                  }
+                >
+                  Review Again
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary small flashcard-rate-btn known"
+                  disabled={pending}
+                  aria-pressed={activeCard.review_state === "known"}
+                  onClick={() =>
+                    void review(activeCard.id, "known", {
+                      advanceDeck: true,
+                      visibleCount: visibleCards.length,
+                    })
+                  }
+                >
+                  Known
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+
+      {cards &&
+        cards.length > 0 &&
+        viewMode === "grid" &&
+        visibleCards.length > 0 && (
+          <ul className="course-list flashcards-grid">
+            {visibleCards.map((card, idx) => {
+              const isRevealed = !!revealedIds[card.id];
+              const stateClass =
+                card.review_state === "known"
+                  ? "status-ready"
+                  : card.review_state === "review_again"
+                    ? "status-active"
+                    : "";
+              return (
+                <li key={card.id} className="flashcard-grid-item">
+                  <div className="flashcard-card-top">
+                    <div className="actions">
+                      <span className="question-num-badge tabular">
+                        #{idx + 1}
+                      </span>
+                      <span className={`badge ${stateClass}`}>
+                        <span className="badge-dot" aria-hidden="true" />
+                        {card.review_state === "new"
+                          ? "New"
+                          : RATINGS[card.review_state]}
+                      </span>
+                    </div>
+                    <FlashcardSourceMeta card={card} />
+                  </div>
+
+                  <div className="flashcard-prompt">
+                    <FlashcardPrompt
+                      front={card.front}
+                      back={card.back}
+                      revealed={isRevealed}
+                    />
+                  </div>
+
+                  {isRevealed && (
+                    <div className="flashcard-answer-panel">
+                      <span className="flashcard-answer-label">Answer</span>
+                      <p className="flashcard-answer-text">{card.back}</p>
+                    </div>
+                  )}
+
+                  <div className="flashcard-card-actions">
+                    <button
+                      type="button"
+                      className="btn secondary small"
+                      onClick={() => toggleReveal(card.id)}
+                    >
+                      {isRevealed ? "Hide answer" : "Show answer"}
+                    </button>
+                    <div className="actions">
+                      {(["review_again", "known"] as const).map((rating) => (
+                        <button
+                          key={rating}
+                          type="button"
+                          className={`btn secondary small flashcard-rate-btn ${rating}`}
+                          disabled={pending}
+                          aria-pressed={card.review_state === rating}
+                          onClick={() => void review(card.id, rating)}
+                        >
+                          {RATINGS[rating]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+    </section>
   );
 }

@@ -2286,31 +2286,75 @@ select {
    Flashcards Study Workspace
    ========================================================================== */
 
-.flashcards-controls-card {
+.flashcards-studio {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 18px;
 }
 
-.flashcards-generate-form {
+.flashcards-studio-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
 }
 
-.flashcards-topic-field {
-  flex: 1 1 280px;
+.flashcards-studio-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.flashcards-studio-title .eyebrow {
+  flex-basis: 100%;
+  margin-bottom: -4px;
+}
+
+.flashcards-studio-title h2 {
   margin: 0;
 }
 
-.flashcards-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.flashcards-inline-stats {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.flashcards-summary-top {
+.flashcards-studio-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+form.flashcards-generate-form {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flashcards-topic-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.flashcards-topic-select {
+  width: auto !important;
+  min-width: 220px;
+  max-width: 320px;
+  height: 36px;
+  padding: 6px 34px 6px 12px !important;
+  font-size: 13.5px !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.flashcards-studio-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2318,11 +2362,13 @@ select {
   gap: 12px;
 }
 
-.flashcards-stats {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+.flashcards-status-pill {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
 }
 
 .flashcards-filters {
@@ -2369,7 +2415,7 @@ select {
 
 .flashcards-progress-track {
   width: 100%;
-  height: 7px;
+  height: 6px;
   border-radius: var(--radius-pill);
   background: var(--bg-surface-muted);
   border: 1px solid var(--border-subtle);
@@ -2386,22 +2432,25 @@ select {
 .flashcard-deck-stage {
   display: flex;
   justify-content: center;
+  padding: 6px 0 4px;
 }
 
-.flashcard-deck-card {
+.flashcard-deck-surface {
   width: 100%;
-  max-width: 880px;
-  padding: 28px 30px;
+  max-width: 920px;
+  padding: 24px 26px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface-muted);
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  box-shadow: var(--shadow-md);
+  gap: 18px;
 }
 
 .flashcard-deck-body {
-  padding: 24px 26px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(79, 70, 229, 0.03) 0%, var(--bg-surface-muted) 100%);
+  padding: 22px 24px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
@@ -2422,28 +2471,32 @@ select {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  padding-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--border-subtle);
 }
 
 .flashcards-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 16px;
   align-items: stretch;
 }
 
-.flashcard-card {
+.flashcard-grid-item {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 18px 20px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-muted);
   transition: border-color var(--duration-fast) var(--ease-snappy),
     box-shadow var(--duration-fast) var(--ease-snappy);
 }
 
-.flashcard-card:hover {
+.flashcard-grid-item:hover {
   border-color: var(--border-default);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 .flashcard-card-top {
@@ -2464,7 +2517,7 @@ select {
 .flashcard-prompt {
   padding: 16px 18px;
   border-radius: var(--radius-md);
-  background: var(--bg-surface-muted);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
 }
 
