@@ -55,4 +55,5 @@ TIME_ZONE = "UTC"
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 MEDIA_ROOT = BASE_DIR / "media"
+FILE_UPLOAD_MAX_MEMORY_SIZE = 15 * 1024 * 1024
 # No public MEDIA_URL: uploaded course files must never be served directly.

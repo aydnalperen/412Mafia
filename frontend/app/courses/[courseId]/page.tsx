@@ -72,7 +72,12 @@ export default function CoursePage({
           course.created_at
         ).toLocaleDateString()}</p>
       </div>
-      <p className="note">Materials, questions, and oral exam coming in later phases.</p>
+      <p className="note">
+        <a href={`/courses/${course.id}/materials`} className="link">
+          Course materials
+        </a>{" "}
+        &mdash; upload and view transcripts, slides, exams, and study materials.
+      </p>
     </main>
   );
 }

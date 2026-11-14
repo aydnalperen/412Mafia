@@ -27,8 +27,13 @@ export class ApiError extends Error {
 }
 
 async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {};
+  // FormData carries its own multipart boundary; do not force a content type.
+  if (!(init?.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
   const res = await fetch(input.toString(), {
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    headers: { ...headers, ...(init?.headers || {}) },
     ...init,
   });
 
@@ -58,4 +63,45 @@ export const coursesApi = {
     }),
   get: (id: string | number): Promise<Course> =>
     request(`${API_BASE}/api/courses/${encodeURIComponent(String(id))}/`),
+};
+
+export type MaterialKind = "transcript" | "slides" | "exam" | "study";
+
+export type Material = {
+  id: string | number;
+  kind: MaterialKind;
+  file_name: string;
+  status: "uploaded" | "processing" | "ready" | "failed";
+  error: string | null;
+  created_at: string;
+};
+
+export type UploadMaterialInput = {
+  file: File;
+  kind: MaterialKind;
+};
+
+export function apiErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    const body = err.body as { error?: { code?: string; message?: string } } | null;
+    if (body?.error?.message) {
+      return body.error.code ? `${body.error.code}: ${body.error.message}` : body.error.message;
+    }
+    return err.message;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+export const materialsApi = {
+  list: (courseId: string | number): Promise<Material[]> =>
+    request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/materials/`),
+  upload: (courseId: string | number, input: UploadMaterialInput): Promise<Material> => {
+    const form = new FormData();
+    form.append("file", input.file);
+    form.append("kind", input.kind);
+    return request(`${API_BASE}/api/courses/${encodeURIComponent(String(courseId))}/materials/`, {
+      method: "POST",
+      body: form,
+    });
+  },
 };

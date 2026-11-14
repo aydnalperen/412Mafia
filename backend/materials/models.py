@@ -17,11 +17,17 @@ class Material(models.Model):
 
     course = models.ForeignKey("courses.Course", on_delete=models.CASCADE, related_name="materials")
     kind = models.CharField(max_length=20, choices=Kind.choices)
-    file = models.FileField(upload_to="materials/")
+    file = models.FileField(upload_to="materials/", max_length=255)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPLOADED)
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     source_material = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="derived_materials")
+    file_hash = models.CharField(max_length=64, blank=True, db_index=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["course", "kind", "file_hash"], condition=~models.Q(file_hash=""), name="unique_course_material_file")
+        ]
 
     def clean(self):
         if self.source_material_id and self.source_material.course_id != self.course_id:
